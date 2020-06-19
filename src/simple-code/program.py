@@ -19,6 +19,8 @@ args = parser.parse_args()
 # Creating the directory where the output file will be created (the directory may or may not exist).
 Path(args.output1_path).parent.mkdir(parents=True, exist_ok=True)
 
+print(f'Params: input1_path={args.input1_path}, param1={args.param1}, output1_path={args.output1_path}')
+
 with open(args.input1_path, 'r') as input1_file:
     with open(args.output1_path, 'w') as output1_file:
         do_work(input1_file, output1_file, args.param1)
