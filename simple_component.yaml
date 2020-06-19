@@ -1,0 +1,22 @@
+name: Simple Component
+description: Run a simple workload
+inputs:
+- {name: Input 1, type: GCSPath}
+- {name: Parameter 1, type: Integer}
+outputs:
+- {name: Output 1, type: GCSPath}
+implementation:
+  container:
+    image: gcr.io/voxsrc-2020-dev-1/simple@sha256:55cd..1924
+    command: [
+      python3, /pipelines/component/src/example-code/program.py
+
+      --input1-path,
+      {inputPath: Input 1}, # Refers to the "Input 1" input
+
+      --param1,
+      {inputValue: Parameter 1}, # Refers to the "Parameter 1" input
+
+      --output1-path,
+      {outputPath: Output 1}, # Refers to the "Output 1" output
+    ]
