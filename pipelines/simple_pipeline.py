@@ -5,8 +5,13 @@ import os
 
 component_root = "../"
 simple_op = comp.load_component_from_file(os.path.join(
-    component_root, 'simple_component.yaml')) 
+    component_root, 'simple_component.yaml'))
 # dummy_op =comp.load_component_from_url('http://....../component.yaml')
+
+train_op = comp.load_component_from_file(os.path.join(
+    component_root, 'train_component.yaml'))
+#train_op.set_gpu_limit(1)
+#.add_node_selector_constraint('cloud.google.com/gke-accelerator', 'nvidia-tesla-t4')
 
 @dsl.pipeline(
     name='Simple Pipeline',
@@ -20,14 +25,10 @@ def simple_pipeline(
         input_1="one\ntwo\nthree\nfour\nfive\nsix\nseven",
         parameter_1='5'
     )
-    simple2_task = simple_op(
+    train_task = train_op(
         input_1=simple1_task.outputs['output_1'],
-        parameter_1='3'
-    )
-    simple3_task = simple_op(
-        input_1=simple2_task.outputs['output_1'],
-        parameter_1='1'
-    )
+    ).set_gpu_limit(1).add_node_selector_constraint(
+            'cloud.google.com/gke-accelerator', 'nvidia-tesla-t4')
 
 # generate compressed pipeline file for upload
 if __name__ == '__main__':
