@@ -1,0 +1,3 @@
+[submodule "voxceleb_trainer"]
+	path = voxceleb_trainer
+	url = git@github.com:mmwebster/voxceleb_trainer.git
