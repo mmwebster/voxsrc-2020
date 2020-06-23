@@ -1,11 +1,11 @@
 #!/bin/bash -e
-image_name=gcr.io/voxsrc-2020-dev-1/simple # Specify the image name here
+image_name=gcr.io/voxsrc-2020-dev-1/trainer
 image_tag=latest
 full_image_name=${image_name}:${image_tag}
 
 # copy project src to local temp dir
 mkdir -p ./build/
-cp -r ../../src ./build/src
+cp -r ./src ./build/src
 
 # move into container's dir
 cd "$(dirname "$0")"

@@ -3,15 +3,11 @@ import kfp.gcp as gcp
 import kfp.components as comp
 import os
 
-component_root = "../"
 simple_op = comp.load_component_from_file(os.path.join(
-    component_root, 'simple_component.yaml'))
-# dummy_op =comp.load_component_from_url('http://....../component.yaml')
+    "./components/simple/", 'simple_component.yaml'))
 
 train_op = comp.load_component_from_file(os.path.join(
-    component_root, 'train_component.yaml'))
-#train_op.set_gpu_limit(1)
-#.add_node_selector_constraint('cloud.google.com/gke-accelerator', 'nvidia-tesla-t4')
+    "./components/train/", 'train_component.yaml'))
 
 @dsl.pipeline(
     name='Simple Pipeline',

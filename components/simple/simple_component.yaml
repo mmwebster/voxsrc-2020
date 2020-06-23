@@ -7,7 +7,7 @@ outputs:
 - {name: output_1, type: GCSPath}
 implementation:
   container:
-    image: gcr.io/voxsrc-2020-dev-1/simple@sha256:3966ead671b304c404c1ca93fadfe91f1cbaefe960af4c7a9f2184d114129ab9
+    image: gcr.io/voxsrc-2020-dev-1/simple:latest
     command: [
       python3, /src/simple-code/program.py,
 

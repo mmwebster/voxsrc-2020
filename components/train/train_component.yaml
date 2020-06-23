@@ -6,9 +6,9 @@ outputs:
 - {name: model_save_path, type: GCSPath}
 implementation:
   container:
-    image: gcr.io/voxsrc-2020-dev-1/trainer@sha256:73dcd8430bf5dfaa573413d08f60e0d4b3c8e8ff9b590dc039a4823ed6ee9969
+    image: gcr.io/voxsrc-2020-dev-1/trainer:latest
     command: [
-      python3, /src/models/simple-model.py,
+      python3, /src/simple-model.py,
 
       --input1-path,
       {inputPath: input_1},
