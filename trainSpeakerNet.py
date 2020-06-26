@@ -12,16 +12,19 @@ from DatasetLoader import DatasetLoader
 
 parser = argparse.ArgumentParser(description = "SpeakerNet");
 
+parser.add_argument('--model-save-path', type=str);
+
 ## Data loader
 parser.add_argument('--max_frames', type=int, default=200,  help='Input length to the network');
+#parser.add_argument('--batch_size', type=int, default=30,  help='Batch size');
 parser.add_argument('--batch_size', type=int, default=200,  help='Batch size');
 parser.add_argument('--max_seg_per_spk', type=int, default=100, help='Maximum number of utterances per speaker per epoch');
 parser.add_argument('--nDataLoaderThread', type=int, default=5, help='Number of loader threads');
 
 ## Training details
 parser.add_argument('--test_interval', type=int, default=10, help='Test and save every [test_interval] epochs');
-parser.add_argument('--max_epoch',      type=int, default=500, help='Maximum number of epochs');
-parser.add_argument('--trainfunc', type=str, default="",    help='Loss function');
+parser.add_argument('--max_epoch',      type=int, default=1, help='Maximum number of epochs');
+parser.add_argument('--trainfunc', type=str, default="amsoftmax",    help='Loss function');
 parser.add_argument('--optimizer', type=str, default="adam", help='sgd or adam');
 
 ## Learning rates
@@ -31,17 +34,17 @@ parser.add_argument("--lr_decay", type=float, default=0.95, help='Learning rate 
 ## Loss functions
 parser.add_argument("--hard_prob", type=float, default=0.5, help='Hard negative mining probability, otherwise random, only for some loss functions');
 parser.add_argument("--hard_rank", type=int, default=10,    help='Hard negative mining rank in the batch, only for some loss functions');
-parser.add_argument('--margin', type=float,  default=1,     help='Loss margin, only for some loss functions');
-parser.add_argument('--scale', type=float,   default=15,    help='Loss scale, only for some loss functions');
+parser.add_argument('--margin', type=float,  default=0.3,     help='Loss margin, only for some loss functions');
+parser.add_argument('--scale', type=float,   default=30,    help='Loss scale, only for some loss functions');
 parser.add_argument('--nSpeakers', type=int, default=5994,  help='Number of speakers in the softmax layer for softmax-based losses, utterances per speaker per iteration for other losses');
 
 ## Load and save
 parser.add_argument('--initial_model',  type=str, default="", help='Initial model weights');
-parser.add_argument('--save_path',      type=str, default="./data/exp1", help='Path for model and logs');
+parser.add_argument('--save_path',      type=str, default="/tmp/data/exp1", help='Path for model and logs');
 
 ## Training and test data
-parser.add_argument('--train_list', type=str, default="",   help='Train list');
-parser.add_argument('--test_list',  type=str, default="",   help='Evaluation list');
+parser.add_argument('--train_list', type=str, default="N/A",   help='Train list');
+parser.add_argument('--test_list',  type=str, default="N/A",   help='Evaluation list');
 parser.add_argument('--train_path', type=str, default="voxceleb2", help='Absolute path to the train set');
 parser.add_argument('--test_path',  type=str, default="voxceleb1", help='Absolute path to the test set');
 
@@ -49,7 +52,7 @@ parser.add_argument('--test_path',  type=str, default="voxceleb1", help='Absolut
 parser.add_argument('--eval', dest='eval', action='store_true', help='Eval only')
 
 ## Model definition
-parser.add_argument('--model', type=str,        default="",     help='Name of model definition');
+parser.add_argument('--model', type=str,        default="ResNetSE34L",     help='Name of model definition');
 parser.add_argument('--encoder_type', type=str, default="SAP",  help='Type of encoder');
 parser.add_argument('--nOut', type=int,         default=512,    help='Embedding size in the last FC layer');
 
@@ -117,6 +120,10 @@ trainLoader = DatasetLoader(args.train_list, gSize=gsize_dict[args.trainfunc], *
 
 clr = s.updateLearningRate(1)
 
+# touch the output file/dir
+print("Creating parent dir for path={args.model_save_path}")
+Path(args.model_save_path).parent.mkdir(parents=True, exist_ok=True)
+
 while(1):   
     print(time.strftime("%Y-%m-%d %H:%M:%S"), it, "Training %s with LR %f..."%(args.model,max(clr)));
 
@@ -140,14 +147,25 @@ while(1):
 
         s.saveParameters(model_save_path+"/model%09d.model"%it);
         
+        ## touch the output file/dir
+        #Path(args.model_save_path).parent.mkdir(parents=True, exist_ok=True)
+        #with open(args.model_save_path, 'w') as eerfile:
+        #    eerfile.write(f"model iter: {it}")
+        #    eerfile.write('%.4f'%result[1])
+            
         eerfile = open(model_save_path+"/model%09d.eer"%it, 'w')
         eerfile.write('%.4f'%result[1])
         eerfile.close()
+        ret = '%.4f'%result[1]
 
     else:
 
         print(time.strftime("%Y-%m-%d %H:%M:%S"), "LR %f, TEER %2.2f, TLOSS %f"%( max(clr), traineer, loss));
-        scorefile.write("IT %d, LR %f, TEER %2.2f, TLOSS %f\n"%(it, max(clr), traineer, loss));
+        scorestuff = "IT %d, LR %f, TEER %2.2f, TLOSS %f\n"%(it, max(clr), traineer, loss)
+        scorefile.write(scorestuff);
+        # write contents
+        with open(args.model_save_path, 'w') as model_save_file:
+            model_save_file.write(f"[model] ret={scorestuff}\n")
 
         scorefile.flush()
 

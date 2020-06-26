@@ -100,6 +100,8 @@ class DatasetLoader(object):
             for ii in range(0,self.gSize):
                 feat = []
                 for ij in range(index,index+self.batch_size):
+                    # @note if there aren't enough independent
+                    #       speakers, the batch won't be fillable
                     feat.append(loadWAV(self.data_list[ij][ii], self.max_frames, evalmode=False));
                 in_data.append(torch.cat(feat, dim=0));
 
