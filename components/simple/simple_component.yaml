@@ -9,7 +9,7 @@ implementation:
   container:
     image: gcr.io/voxsrc-2020-dev-1/simple:latest
     command: [
-      python3, /src/simple-code/program.py,
+      python3, /src/program.py,
 
       --input1-path,
       {inputPath: input_1}, # Refers to the "Input 1" input

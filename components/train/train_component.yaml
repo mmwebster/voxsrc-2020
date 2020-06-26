@@ -1,18 +1,14 @@
 name: PyTorch Trainer Component
 description: Train a pytorch model
 inputs:
-- {name: input_1, type: GCSPath}
 outputs:
-- {name: model_save_path, type: GCSPath}
+- {name: trained_model, type: GCSPath}
 implementation:
   container:
     image: gcr.io/voxsrc-2020-dev-1/trainer:latest
     command: [
-      python3, /src/simple-model.py,
-
-      --input1-path,
-      {inputPath: input_1},
+      python3, /src/voxceleb_trainer/trainSpeakerNet.py,
 
       --model-save-path,
-      {outputPath: model_save_path},
+      {outputPath: trained_model},
     ]

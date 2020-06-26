@@ -5,7 +5,6 @@ full_image_name=${image_name}:${image_tag}
 
 # copy project src to local temp dir
 mkdir -p ./build/
-cp -r ../../src ./build/src
 
 # move into container's dir
 cd "$(dirname "$0")"
