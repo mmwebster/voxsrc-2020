@@ -9,10 +9,20 @@ import glob
 from tuneThreshold import tuneThresholdfromScore
 from SpeakerNet import SpeakerNet
 from DatasetLoader import DatasetLoader
+import subprocess
+import time
+from tqdm import tqdm
+from functools import partial
+from multiprocessing import Pool
 
 parser = argparse.ArgumentParser(description = "SpeakerNet");
 
-parser.add_argument('--model-save-path', type=str);
+## New args to support running on kubernetes/kubeflow
+parser.add_argument('--model-save-path', type=str, default="model/");
+# set this in order to fetch lists and data from GCS before reading
+# them from local filesystem
+parser.add_argument('--data-bucket', type=str)
+parser.add_argument('--save-data-to', type=str, default="./tmp/")
 
 ## Data loader
 parser.add_argument('--max_frames', type=int, default=200,  help='Input length to the network');
@@ -43,8 +53,8 @@ parser.add_argument('--initial_model',  type=str, default="", help='Initial mode
 parser.add_argument('--save_path',      type=str, default="/tmp/data/exp1", help='Path for model and logs');
 
 ## Training and test data
-parser.add_argument('--train_list', type=str, default="N/A",   help='Train list');
-parser.add_argument('--test_list',  type=str, default="N/A",   help='Evaluation list');
+parser.add_argument('--train_list', type=str, help='Train list');
+parser.add_argument('--test_list',  type=str, help='Evaluation list');
 parser.add_argument('--train_path', type=str, default="voxceleb2", help='Absolute path to the train set');
 parser.add_argument('--test_path',  type=str, default="voxceleb1", help='Absolute path to the test set');
 
@@ -57,6 +67,95 @@ parser.add_argument('--encoder_type', type=str, default="SAP",  help='Type of en
 parser.add_argument('--nOut', type=int,         default=512,    help='Embedding size in the last FC layer');
 
 args = parser.parse_args();
+
+times = []
+## Fetch data from GCS if enabled
+if args.data_bucket is not None:
+    data_path = os.path.join(args.save_data_to,"data/")
+    model_path = os.path.join(args.save_data_to,"model/")
+    # make dir for data
+    if not(os.path.exists(args.save_data_to)):
+        os.makedirs(data_path)
+        os.makedirs(model_path)
+
+    # compose blob names
+    list_blobs = [args.train_list, args.test_list]
+    data_blobs = [args.train_path, args.test_path]
+    blobs = list_blobs + data_blobs
+
+    times.append({'start': time.time()})
+    print("Downloading dataset blobs")
+    # download each blob
+    for blob in blobs:
+        NUM_CORES = 8 # hard-coded to prod/cluster machine type
+        src = f"gs://{args.data_bucket}/{blob}"
+        dst = os.path.join(data_path, blob)
+        subprocess.call(f"gsutil \
+                            -o 'GSUtil:parallel_thread_count=1' \
+                            -o 'GSUtil:sliced_object_download_max_components={NUM_CORES}' \
+                            cp {src} {dst}", shell=True)
+    times[-1]['stop'] = time.time()
+    times[-1]['elapsed'] = times[-1]['stop'] - times[-1]['start']
+
+    times.append({'start': time.time()})
+    print(f"Uncompressing train/test data blobs")
+    # uncompress data blobs
+    for blob in tqdm(data_blobs):
+        dst = os.path.join(data_path, blob)
+        with open(os.devnull, 'w') as FNULL:
+            subprocess.call(f"tar -C {data_path} -zxvf {dst}",
+                    shell=True, stdout=FNULL, stderr=subprocess.STDOUT)
+
+    times[-1]['stop'] = time.time()
+    times[-1]['elapsed'] = times[-1]['stop'] - times[-1]['start']
+
+    times.append({'start': time.time()})
+    # convert train data from AAC (.m4a) to WAV (.wav)
+    # @note Didn't compress the test data--wasn't originally provided
+    #       in compressed form and wasn't sure if compressing w/ lossy
+    #       AAC would degrade audio relative to blind test set
+    # @TODO try lossy-compressing voxceleb1 test data w/ AAC
+    for blob in [args.train_path]:
+        # get full path to blob's uncompressed data dir
+        blob_dir_name = args.train_path.split('.tar.gz')[0]
+        blob_dir_path = os.path.join(data_path, blob_dir_name)
+        # get list of all nested files
+        files = glob.glob(f"{blob_dir_path}/*/*/*.m4a")
+
+        # @note Achieved best transcoding/audio-decompression results
+        #       using parallel, rather than multiple python processes
+        USE_PARALLEL = True
+        if USE_PARALLEL:
+            # @TODO confirm that this is IO-bound and no additional
+            #       CPU-usage is possible
+            print("Writing wav files names to file")
+            transcode_list_path = os.path.join(data_path, "transcode-list.txt")
+            with open(transcode_list_path, "w") as outfile:
+                outfile.write("\n".join(files))
+            print("Constructing command")
+            cmd = "cat %s | parallel ffmpeg -y -i {} -ac 1 -vn \
+                    -acodec pcm_s16le -ar 16000 {.}.wav >/dev/null \
+                    2>/dev/null" % (transcode_list_path)
+            print("Uncompressing audio AAC->WAV in parallel...")
+            subprocess.call(cmd, shell=True)
+        else:
+            print(f"Compiling '{blob_dir_name}' convert cmd list")
+            cmd_list = [f"ffmpeg -y -i {filename} -ac 1 -vn -acodec \
+                          pcm_s16le -ar 16000 {filename.replace('.m4a', '.wav')} \
+                          >/dev/null 2>/dev/null"
+                        for filename in tqdm(files)
+                       ]
+
+            print(f"Converting '{blob_dir_name}' files from AAC to WAV")
+            pool = Pool(4) # num concurrent threads
+            for i, returncode in tqdm(enumerate(pool.imap(partial(subprocess.call, shell=True), cmd_list))):
+                if returncode != 0:
+                    print("%d command failed: %d" % (i, returncode))
+
+    times[-1]['stop'] = time.time()
+    times[-1]['elapsed'] = times[-1]['stop'] - times[-1]['start']
+
+print(f"Downloaded, extracted, converted in: {times}")
 
 ## Initialise directories
 model_save_path     = args.save_path+"/model"
