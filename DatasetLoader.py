@@ -49,7 +49,7 @@ def loadWAV(filename, max_frames, evalmode=True, num_eval=10):
     return feat;
 
 class DatasetLoader(object):
-    def __init__(self, dataset_file_name, batch_size, max_frames, max_seg_per_spk, nDataLoaderThread, gSize, train_path, maxQueueSize = 10, **kwargs):
+    def __init__(self, dataset_file_name, batch_size, max_frames, max_seg_per_spk, nDataLoaderThread, gSize, new_train_path, maxQueueSize = 10, **kwargs):
         self.dataset_file_name = dataset_file_name;
         self.nWorkers = nDataLoaderThread;
         self.max_frames = max_frames;
@@ -73,7 +73,7 @@ class DatasetLoader(object):
                 
                 data = line.split();
                 speaker_name = data[0];
-                filename = os.path.join(train_path,data[1]);
+                filename = os.path.join(new_train_path,data[1]);
 
                 if not (speaker_name in self.data_dict):
                     self.data_dict[speaker_name] = [];

@@ -24,6 +24,7 @@ class SpeakerNet(nn.Module):
         argsdict = {'nOut': nOut, 'encoder_type':encoder_type}
 
         SpeakerNetModel = importlib.import_module('models.'+model).__getattribute__(model)
+        # @TODO make cuda optional in order to train on dev machines w/o GPUs
         self.__S__ = SpeakerNetModel(**argsdict).cuda();
 
         if trainfunc == 'angleproto':

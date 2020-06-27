@@ -11,29 +11,40 @@ from SpeakerNet import SpeakerNet
 from DatasetLoader import DatasetLoader
 import subprocess
 import time
-from tqdm import tqdm
-from functools import partial
-from multiprocessing import Pool
+from pathlib import Path
+from data_fetch import download_gcs_dataset, extract_gcs_dataset, \
+                     transcode_gcs_dataset, set_loc_paths_from_gcs_dataset
 
 parser = argparse.ArgumentParser(description = "SpeakerNet");
 
 ## New args to support running on kubernetes/kubeflow
-parser.add_argument('--model-save-path', type=str, default="model/");
-# set this in order to fetch lists and data from GCS before reading
+# @note "tmp" denotes that this output data will not be captured by
+#       the kubeflow pipeline or made available to downstream components
+# set --data-bucket in order to fetch lists and data from GCS before reading
 # them from local filesystem
+
+# temporary/internal outputs
 parser.add_argument('--data-bucket', type=str)
-parser.add_argument('--save-data-to', type=str, default="./tmp/")
+parser.add_argument('--save-tmp-data-to', type=str, default="./tmp/data/")
+parser.add_argument('--skip-data-fetch', type=bool, default=False)
+parser.add_argument('--save-tmp-model-to', type=str, default="./tmp/model/");
+parser.add_argument('--save-tmp-results-to', type=str, default="./tmp/results/");
+parser.add_argument('--save-tmp-feats-to', type=str, default="./tmp/feats/");
+
+# permanent/component outputs
+parser.add_argument('--save-model-to', type=str, default="./out/model.txt")
 
 ## Data loader
 parser.add_argument('--max_frames', type=int, default=200,  help='Input length to the network');
-#parser.add_argument('--batch_size', type=int, default=30,  help='Batch size');
 parser.add_argument('--batch_size', type=int, default=200,  help='Batch size');
+# ^^^ use --batch_size=30 for small datasets that can't fill an entire 200 speaker pair/triplet batch
 parser.add_argument('--max_seg_per_spk', type=int, default=100, help='Maximum number of utterances per speaker per epoch');
 parser.add_argument('--nDataLoaderThread', type=int, default=5, help='Number of loader threads');
 
 ## Training details
 parser.add_argument('--test_interval', type=int, default=10, help='Test and save every [test_interval] epochs');
-parser.add_argument('--max_epoch',      type=int, default=1, help='Maximum number of epochs');
+parser.add_argument('--max_epoch',      type=int, default=100, help='Maximum number of epochs');
+# ^^^ use --max_epoch=1 for local testing
 parser.add_argument('--trainfunc', type=str, default="amsoftmax",    help='Loss function');
 parser.add_argument('--optimizer', type=str, default="adam", help='sgd or adam');
 
@@ -68,105 +79,41 @@ parser.add_argument('--nOut', type=int,         default=512,    help='Embedding 
 
 args = parser.parse_args();
 
-times = []
+train_list, test_list, train_path, test_path = [None, None, None, None]
+
 ## Fetch data from GCS if enabled
-if args.data_bucket is not None:
-    data_path = os.path.join(args.save_data_to,"data/")
-    model_path = os.path.join(args.save_data_to,"model/")
-    # make dir for data
-    if not(os.path.exists(args.save_data_to)):
-        os.makedirs(data_path)
-        os.makedirs(model_path)
+if args.data_bucket is not None and not args.skip_data_fetch:
+    print("Performing GCS data fetch")
+    # download, extract, transcode (compressed AAC->WAV) dataset
+    download_gcs_dataset(args)
+    extract_gcs_dataset(args)
+    transcode_gcs_dataset(args)
+    # set new lists and data paths
+    train_list, test_list, train_path, test_path \
+        = set_loc_paths_from_gcs_dataset(args)
+elif args.data_bucket is not None and args.skip_data_fetch:
+    print("Skipping GCS data fetch")
+    # dataset from GCS already available; set new lists and data paths
+    train_list, test_list, train_path, test_path \
+        = set_loc_paths_from_gcs_dataset(args)
+else:
+    print("Using local, permanent dataset")
+    # pass through to use permanent local dataset
+    train_list = args.train_list
+    test_list = args.test_list
+    train_path = args.train_path
+    test_path = args.test_path
 
-    # compose blob names
-    list_blobs = [args.train_list, args.test_list]
-    data_blobs = [args.train_path, args.test_path]
-    blobs = list_blobs + data_blobs
+# init directories
+# temporary / internal output directories
+tmp_output_dirs = [args.save_tmp_model_to, args.save_tmp_results_to,
+        args.save_tmp_feats_to]
+# directories of parmanent / component output artifacts
+output_dirs = [os.path.dirname(args.save_model_to)]
 
-    times.append({'start': time.time()})
-    print("Downloading dataset blobs")
-    # download each blob
-    for blob in blobs:
-        NUM_CORES = 8 # hard-coded to prod/cluster machine type
-        src = f"gs://{args.data_bucket}/{blob}"
-        dst = os.path.join(data_path, blob)
-        subprocess.call(f"gsutil \
-                            -o 'GSUtil:parallel_thread_count=1' \
-                            -o 'GSUtil:sliced_object_download_max_components={NUM_CORES}' \
-                            cp {src} {dst}", shell=True)
-    times[-1]['stop'] = time.time()
-    times[-1]['elapsed'] = times[-1]['stop'] - times[-1]['start']
-
-    times.append({'start': time.time()})
-    print(f"Uncompressing train/test data blobs")
-    # uncompress data blobs
-    for blob in tqdm(data_blobs):
-        dst = os.path.join(data_path, blob)
-        with open(os.devnull, 'w') as FNULL:
-            subprocess.call(f"tar -C {data_path} -zxvf {dst}",
-                    shell=True, stdout=FNULL, stderr=subprocess.STDOUT)
-
-    times[-1]['stop'] = time.time()
-    times[-1]['elapsed'] = times[-1]['stop'] - times[-1]['start']
-
-    times.append({'start': time.time()})
-    # convert train data from AAC (.m4a) to WAV (.wav)
-    # @note Didn't compress the test data--wasn't originally provided
-    #       in compressed form and wasn't sure if compressing w/ lossy
-    #       AAC would degrade audio relative to blind test set
-    # @TODO try lossy-compressing voxceleb1 test data w/ AAC
-    for blob in [args.train_path]:
-        # get full path to blob's uncompressed data dir
-        blob_dir_name = args.train_path.split('.tar.gz')[0]
-        blob_dir_path = os.path.join(data_path, blob_dir_name)
-        # get list of all nested files
-        files = glob.glob(f"{blob_dir_path}/*/*/*.m4a")
-
-        # @note Achieved best transcoding/audio-decompression results
-        #       using parallel, rather than multiple python processes
-        USE_PARALLEL = True
-        if USE_PARALLEL:
-            # @TODO confirm that this is IO-bound and no additional
-            #       CPU-usage is possible
-            print("Writing wav files names to file")
-            transcode_list_path = os.path.join(data_path, "transcode-list.txt")
-            with open(transcode_list_path, "w") as outfile:
-                outfile.write("\n".join(files))
-            print("Constructing command")
-            cmd = "cat %s | parallel ffmpeg -y -i {} -ac 1 -vn \
-                    -acodec pcm_s16le -ar 16000 {.}.wav >/dev/null \
-                    2>/dev/null" % (transcode_list_path)
-            print("Uncompressing audio AAC->WAV in parallel...")
-            subprocess.call(cmd, shell=True)
-        else:
-            print(f"Compiling '{blob_dir_name}' convert cmd list")
-            cmd_list = [f"ffmpeg -y -i {filename} -ac 1 -vn -acodec \
-                          pcm_s16le -ar 16000 {filename.replace('.m4a', '.wav')} \
-                          >/dev/null 2>/dev/null"
-                        for filename in tqdm(files)
-                       ]
-
-            print(f"Converting '{blob_dir_name}' files from AAC to WAV")
-            pool = Pool(4) # num concurrent threads
-            for i, returncode in tqdm(enumerate(pool.imap(partial(subprocess.call, shell=True), cmd_list))):
-                if returncode != 0:
-                    print("%d command failed: %d" % (i, returncode))
-
-    times[-1]['stop'] = time.time()
-    times[-1]['elapsed'] = times[-1]['stop'] - times[-1]['start']
-
-print(f"Downloaded, extracted, converted in: {times}")
-
-## Initialise directories
-model_save_path     = args.save_path+"/model"
-result_save_path    = args.save_path+"/result"
-feat_save_path      = ""
-
-if not(os.path.exists(model_save_path)):
-    os.makedirs(model_save_path)
-        
-if not(os.path.exists(result_save_path)):
-    os.makedirs(result_save_path)
+for d in (tmp_output_dirs + output_dirs):
+    if not(os.path.exists(d)):
+        os.makedirs(d)
 
 ## Load models
 s = SpeakerNet(**vars(args));
@@ -176,7 +123,7 @@ prevloss    = float("inf");
 sumloss     = 0;
 
 ## Load model weights
-modelfiles = glob.glob('%s/model0*.model'%model_save_path)
+modelfiles = glob.glob('%s/model0*.model'%args.save_tmp_model_to)
 modelfiles.sort()
 
 if len(modelfiles) >= 1:
@@ -194,14 +141,14 @@ for ii in range(0,it-1):
 ## Evaluation code
 if args.eval == True:
         
-    sc, lab = s.evaluateFromListSave(args.test_list, print_interval=100, feat_dir=feat_save_path, test_path=args.test_path)
+    sc, lab = s.evaluateFromListSave(test_list, print_interval=100, feat_dir=args.save_tmp_feats_to, test_path=test_path)
     result = tuneThresholdfromScore(sc, lab, [1, 0.1]);
     print('EER %2.4f'%result[1])
 
     quit();
 
 ## Write args to scorefile
-scorefile = open(result_save_path+"/scores.txt", "a+");
+scorefile = open(os.path.join(args.save_tmp_results_to,"scores.txt"), "a+");
 
 for items in vars(args):
     print(items, vars(args)[items]);
@@ -215,13 +162,15 @@ assert args.trainfunc in gsize_dict
 assert gsize_dict[args.trainfunc] <= 100
 
 ## Initialise data loader
-trainLoader = DatasetLoader(args.train_list, gSize=gsize_dict[args.trainfunc], **vars(args));
+trainLoader = DatasetLoader(train_list,
+        gSize=gsize_dict[args.trainfunc], new_train_path=train_path,
+        **vars(args));
 
 clr = s.updateLearningRate(1)
 
 # touch the output file/dir
-print("Creating parent dir for path={args.model_save_path}")
-Path(args.model_save_path).parent.mkdir(parents=True, exist_ok=True)
+print(f"Creating parent dir for path={args.save_tmp_model_to}")
+Path(args.save_tmp_model_to).parent.mkdir(parents=True, exist_ok=True)
 
 while(1):   
     print(time.strftime("%Y-%m-%d %H:%M:%S"), it, "Training %s with LR %f..."%(args.model,max(clr)));
@@ -234,7 +183,8 @@ while(1):
 
         print(time.strftime("%Y-%m-%d %H:%M:%S"), it, "Evaluating...");
 
-        sc, lab = s.evaluateFromListSave(args.test_list, print_interval=100, feat_dir=feat_save_path, test_path=args.test_path)
+        sc, lab = s.evaluateFromListSave(test_list, print_interval=100,
+                feat_dir=args.save_tmp_feats_to, test_path=test_path)
         result = tuneThresholdfromScore(sc, lab, [1, 0.1]);
 
         print(time.strftime("%Y-%m-%d %H:%M:%S"), "LR %f, TEER/T1 %2.2f, TLOSS %f, VEER %2.4f"%( max(clr), traineer, loss, result[1]));
@@ -244,15 +194,15 @@ while(1):
 
         clr = s.updateLearningRate(args.lr_decay) 
 
-        s.saveParameters(model_save_path+"/model%09d.model"%it);
+        s.saveParameters(args.save_tmp_model_to+"/model%09d.model"%it);
         
         ## touch the output file/dir
-        #Path(args.model_save_path).parent.mkdir(parents=True, exist_ok=True)
-        #with open(args.model_save_path, 'w') as eerfile:
+        #Path(args.save_tmp_model_to).parent.mkdir(parents=True, exist_ok=True)
+        #with open(args.save_tmp_model_to, 'w') as eerfile:
         #    eerfile.write(f"model iter: {it}")
         #    eerfile.write('%.4f'%result[1])
             
-        eerfile = open(model_save_path+"/model%09d.eer"%it, 'w')
+        eerfile = open(args.save_tmp_model_to+"/model%09d.eer"%it, 'w')
         eerfile.write('%.4f'%result[1])
         eerfile.close()
         ret = '%.4f'%result[1]
@@ -263,7 +213,7 @@ while(1):
         scorestuff = "IT %d, LR %f, TEER %2.2f, TLOSS %f\n"%(it, max(clr), traineer, loss)
         scorefile.write(scorestuff);
         # write contents
-        with open(args.model_save_path, 'w') as model_save_file:
+        with open(args.save_model_to, 'w') as model_save_file:
             model_save_file.write(f"[model] ret={scorestuff}\n")
 
         scorefile.flush()
