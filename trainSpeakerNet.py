@@ -115,8 +115,12 @@ for d in (tmp_output_dirs + output_dirs):
     if not(os.path.exists(d)):
         os.makedirs(d)
 
+# set device cuda or cpu
+cuda_avail = torch.cuda.is_available()
+device = torch.device("cuda" if cuda_avail else "cpu")
+
 ## Load models
-s = SpeakerNet(**vars(args));
+s = SpeakerNet(device, **vars(args));
 
 it          = 1;
 prevloss    = float("inf");

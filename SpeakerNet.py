@@ -18,45 +18,47 @@ from loss.pairwise import PairwiseLoss
 
 class SpeakerNet(nn.Module):
 
-    def __init__(self, max_frames, lr = 0.0001, margin = 1, scale = 1, hard_rank = 0, hard_prob = 0, model="alexnet50", nOut = 512, nSpeakers = 1000, optimizer = 'adam', encoder_type = 'SAP', normalize = True, trainfunc='contrastive', **kwargs):
+    def __init__(self, device, max_frames, lr = 0.0001, margin = 1, scale = 1, hard_rank = 0, hard_prob = 0, model="alexnet50", nOut = 512, nSpeakers = 1000, optimizer = 'adam', encoder_type = 'SAP', normalize = True, trainfunc='contrastive', **kwargs):
         super(SpeakerNet, self).__init__();
 
         argsdict = {'nOut': nOut, 'encoder_type':encoder_type}
 
+        self.device = device
+
         SpeakerNetModel = importlib.import_module('models.'+model).__getattribute__(model)
         # @TODO make cuda optional in order to train on dev machines w/o GPUs
-        self.__S__ = SpeakerNetModel(**argsdict).cuda();
+        self.__S__ = SpeakerNetModel(**argsdict).to(self.device);
 
         if trainfunc == 'angleproto':
-            self.__L__ = AngleProtoLoss().cuda()
+            self.__L__ = AngleProtoLoss().to(self.device)
             self.__train_normalize__    = True
             self.__test_normalize__     = True
         elif trainfunc == 'ge2e':
-            self.__L__ = GE2ELoss().cuda()
+            self.__L__ = GE2ELoss().to(self.device)
             self.__train_normalize__    = True
             self.__test_normalize__     = True
         elif trainfunc == 'amsoftmax':
-            self.__L__ = AMSoftmax(in_feats=nOut, n_classes=nSpeakers, m=margin, s=scale).cuda()
+            self.__L__ = AMSoftmax(in_feats=nOut, n_classes=nSpeakers, m=margin, s=scale).to(self.device)
             self.__train_normalize__    = False
             self.__test_normalize__     = True
         elif trainfunc == 'aamsoftmax':
-            self.__L__ = AAMSoftmax(in_feats=nOut, n_classes=nSpeakers, m=margin, s=scale).cuda()
+            self.__L__ = AAMSoftmax(in_feats=nOut, n_classes=nSpeakers, m=margin, s=scale).to(self.device)
             self.__train_normalize__    = False
             self.__test_normalize__     = True
         elif trainfunc == 'softmax':
-            self.__L__ = SoftmaxLoss(in_feats=nOut, n_classes=nSpeakers).cuda()
+            self.__L__ = SoftmaxLoss(in_feats=nOut, n_classes=nSpeakers).to(self.device)
             self.__train_normalize__    = False
             self.__test_normalize__     = True
         elif trainfunc == 'proto':
-            self.__L__ = ProtoLoss().cuda()
+            self.__L__ = ProtoLoss().to(self.device)
             self.__train_normalize__    = False
             self.__test_normalize__     = False
         elif trainfunc == 'triplet':
-            self.__L__ = PairwiseLoss(loss_func='triplet', hard_rank=hard_rank, hard_prob=hard_prob, margin=margin).cuda()
+            self.__L__ = PairwiseLoss(loss_func='triplet', hard_rank=hard_rank, hard_prob=hard_prob, margin=margin).to(self.device)
             self.__train_normalize__    = True
             self.__test_normalize__     = True
         elif trainfunc == 'contrastive':
-            self.__L__ = PairwiseLoss(loss_func='contrastive', hard_rank=hard_rank, hard_prob=hard_prob, margin=margin).cuda()
+            self.__L__ = PairwiseLoss(loss_func='contrastive', hard_rank=hard_rank, hard_prob=hard_prob, margin=margin).to(self.device)
             self.__train_normalize__    = True
             self.__test_normalize__     = True
         else:
@@ -96,14 +98,14 @@ class SpeakerNet(nn.Module):
 
             feat = []
             for inp in data:
-                outp      = self.__S__.forward(inp.cuda())
+                outp      = self.__S__.forward(inp.to(self.device))
                 if self.__train_normalize__:
                     outp   = F.normalize(outp, p=2, dim=1)
                 feat.append(outp)
 
             feat = torch.stack(feat,dim=1).squeeze()
 
-            label   = torch.LongTensor(data_label).cuda()
+            label   = torch.LongTensor(data_label).to(self.device)
 
             nloss, prec1 = self.__L__.forward(feat,label)
 
@@ -189,7 +191,7 @@ class SpeakerNet(nn.Module):
         ## Save all features to file
         for idx, file in enumerate(setfiles):
 
-            inp1 = loadWAV(os.path.join(test_path,file), self.__max_frames__, evalmode=True, num_eval=num_eval).cuda()
+            inp1 = loadWAV(os.path.join(test_path,file), self.__max_frames__, evalmode=True, num_eval=num_eval).to(self.device)
 
             ref_feat = self.__S__.forward(inp1).detach().cpu()
 
@@ -217,11 +219,11 @@ class SpeakerNet(nn.Module):
             data = line.split();
 
             if feat_dir == '':
-                ref_feat = feats[data[1]].cuda()
-                com_feat = feats[data[2]].cuda()
+                ref_feat = feats[data[1]].to(self.device)
+                com_feat = feats[data[2]].to(self.device)
             else:
-                ref_feat = torch.load(os.path.join(feat_dir,filedict[data[1]])).cuda()
-                com_feat = torch.load(os.path.join(feat_dir,filedict[data[2]])).cuda()
+                ref_feat = torch.load(os.path.join(feat_dir,filedict[data[1]])).to(self.device)
+                com_feat = torch.load(os.path.join(feat_dir,filedict[data[2]])).to(self.device)
 
             if self.__test_normalize__:
                 ref_feat = F.normalize(ref_feat, p=2, dim=1)
