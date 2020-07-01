@@ -102,6 +102,8 @@ elif args.copy_test:
 # python utils.py --compress --src-dir datasets/vox1_no_cuda --dst-dir ./tars
 # ------------------------------
 elif args.compress:
+    raise "ERROR: WIP, actually is broken--doesn't work if in nest dir\
+            . Need something like tar -C ./datasets/ -zcvf tars/vox1_no_cuda.tar.gz vox1_no_cuda"
     dataset_name = os.path.basename(args.src_dir)
     if dataset_name == "":
         raise "ERROR: No dataset name, did you put a trailing slash?"
