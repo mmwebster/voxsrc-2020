@@ -26,7 +26,7 @@ parser = argparse.ArgumentParser(description = "SpeakerNet");
 # temporary/internal outputs
 parser.add_argument('--data-bucket', type=str)
 parser.add_argument('--save-tmp-data-to', type=str, default="./tmp/data/")
-parser.add_argument('--skip-data-fetch', type=bool, default=False)
+parser.add_argument('--skip-data-fetch', action='store_true')
 parser.add_argument('--save-tmp-model-to', type=str, default="./tmp/model/");
 parser.add_argument('--save-tmp-results-to', type=str, default="./tmp/results/");
 parser.add_argument('--save-tmp-feats-to', type=str, default="./tmp/feats/");

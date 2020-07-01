@@ -43,9 +43,10 @@ def extract_gcs_dataset(args):
 
     # uncompress data blobs
     for blob in tqdm(data_blobs):
-        dst = os.path.join(args.save_tmp_data_to, blob)
+        src  = os.path.join(args.save_tmp_data_to, blob)
+        dst = args.save_tmp_data_to
         with open(os.devnull, 'w') as FNULL:
-            subprocess.call(f"tar -C {args.save_tmp_data_to} -zxvf {dst}",
+            subprocess.call(f"tar -C {dst} -zxvf {src}",
                     shell=True, stdout=FNULL, stderr=subprocess.STDOUT)
 
     print(f"...Finished in {time.time() - start} (s)")
