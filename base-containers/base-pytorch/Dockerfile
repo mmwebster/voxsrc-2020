@@ -10,3 +10,7 @@ RUN pip install --no-cache-dir torch==1.5.0 torchaudio==0.5.0 numpy \
 
 # python GCP client
 RUN pip install --upgrade --no-cache-dir google-cloud-storage
+
+# install ffmpeg audio compression tool
+RUN conda install -c conda-forge ffmpeg
+RUN conda install -c conda-forge parallel

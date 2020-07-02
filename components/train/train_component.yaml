@@ -1,6 +1,13 @@
 name: PyTorch Trainer Component
 description: Train a pytorch model
 inputs:
+  - {name: data_bucket, type: String}
+  - {name: test_list, type: String}
+  - {name: train_list, type: String}
+  - {name: test_path, type: String}
+  - {name: train_path, type: String}
+  - {name: batch_size, type: Integer}
+  - {name: max_epoch, type: Integer}
 outputs:
 - {name: trained_model, type: GCSPath}
 implementation:
@@ -8,7 +15,13 @@ implementation:
     image: gcr.io/voxsrc-2020-dev-1/trainer:latest
     command: [
       python3, /src/voxceleb_trainer/trainSpeakerNet.py,
+      --data-bucket, {inputValue: data_bucket},
+      --test_list, {inputValue: test_list},
+      --train_list, {inputValue: train_list},
+      --test_path, {inputValue: test_path},
+      --train_path, {inputValue: train_path},
+      --batch_size, {inputValue: batch_size},
+      --max_epoch, {inputValue: max_epoch},
 
-      --model-save-path,
-      {outputPath: trained_model},
+      --save-model-to, {outputPath: trained_model},
     ]

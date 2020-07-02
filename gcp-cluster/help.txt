@@ -1,0 +1,23 @@
+##############################
+# GCP commands
+##############################
+
+# resize node pool
+gcloud container clusters resize [cluster] --node-pool [node pool] --num-nodes [new size]
+
+# resize main KF node pool to 1
+gcloud container clusters resize kf-train-6 --node-pool kf-train-6-cpu-pool-v1 --num-nodes 1
+
+# list all node pools in default cluster
+gcloud container node-pools list
+
+
+##############################
+# Docker commands
+##############################
+
+# list all docker images
+docker images
+
+# open a bash shell in a docker container from its image
+docker run -it [image ID] /bin/bash

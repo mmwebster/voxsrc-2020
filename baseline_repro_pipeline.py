@@ -12,10 +12,26 @@ train_op = comp.load_component_from_file(os.path.join(
 )
 # Define a pipeline and create a task from a component
 def baseline_repro_pipeline(
+    data_bucket: str = 'voxsrc-2020-voxceleb-v4',
+    test_list: str = 'vox1_no_cuda.txt',
+    train_list: str = 'vox2_no_cuda.txt',
+    test_path: str = 'vox1_no_cuda.tar.gz',
+    train_path: str = 'vox2_no_cuda.tar.gz',
+    batch_size: int = 5,
+    max_epoch: int = 1,
 ):
     train_task = train_op(
-    ).set_gpu_limit(1).add_node_selector_constraint(
-            'cloud.google.com/gke-accelerator', 'nvidia-tesla-t4')
+        data_bucket = data_bucket,
+        test_list = test_list,
+        train_list = train_list,
+        test_path = test_path,
+        train_path = train_path,
+        batch_size = batch_size,
+        max_epoch = max_epoch,
+    ).apply(gcp.use_preemptible_nodepool(hard_constraint=True))\
+     .set_gpu_limit(1)\
+     .add_node_selector_constraint('cloud.google.com/gke-accelerator',
+             'nvidia-tesla-t4')
 
 # generate compressed pipeline file for upload
 if __name__ == '__main__':
