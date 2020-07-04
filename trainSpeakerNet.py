@@ -13,7 +13,17 @@ import subprocess
 import time
 from pathlib import Path
 from data_fetch import download_gcs_dataset, extract_gcs_dataset, \
-                     transcode_gcs_dataset, set_loc_paths_from_gcs_dataset
+                     transcode_gcs_dataset, set_loc_paths_from_gcs_dataset,\
+                     download_blob, upload_blob
+import yaml
+import os
+import pwd
+import google
+
+# for local runs, use this for unique checkpoint dirs across team members
+def get_username():
+    return pwd.getpwuid( os.getuid() )[ 0 ]
+
 
 parser = argparse.ArgumentParser(description = "SpeakerNet");
 
@@ -27,9 +37,14 @@ parser = argparse.ArgumentParser(description = "SpeakerNet");
 parser.add_argument('--data-bucket', type=str)
 parser.add_argument('--save-tmp-data-to', type=str, default="./tmp/data/")
 parser.add_argument('--skip-data-fetch', action='store_true')
+parser.add_argument('--force-training-reset', action='store_true')
 parser.add_argument('--save-tmp-model-to', type=str, default="./tmp/model/");
 parser.add_argument('--save-tmp-results-to', type=str, default="./tmp/results/");
 parser.add_argument('--save-tmp-feats-to', type=str, default="./tmp/feats/");
+
+parser.add_argument('--checkpoint-bucket', type=str,
+        default="voxsrc-2020-checkpoints-dev");
+parser.add_argument('--checkpoint-path', type=str, default=f"{get_username()}/");
 
 # permanent/component outputs
 parser.add_argument('--save-model-to', type=str, default="./out/model.txt")
@@ -127,15 +142,55 @@ it          = 1;
 prevloss    = float("inf");
 sumloss     = 0;
 
-## Load model weights
-modelfiles = glob.glob('%s/model0*.model'%args.save_tmp_model_to)
-modelfiles.sort()
+# Load model weights
 
-if len(modelfiles) >= 1:
-    s.loadParameters(modelfiles[-1]);
-    print("Model %s loaded from previous state!"%modelfiles[-1]);
-    it = int(os.path.splitext(os.path.basename(modelfiles[-1]))[0][5:]) + 1
-elif(args.initial_model != ""):
+# Check for training meta data from a previously preempted run
+METADATA_NAME = 'metadata.yaml'
+metadata_gcs_src_path = os.path.join(args.checkpoint_path, METADATA_NAME)
+metadata_file_dst_path = os.path.join(args.save_tmp_model_to, METADATA_NAME)
+default_metadata = {'is_done': False}
+metadata = default_metadata
+
+if args.force_training_reset:
+    print("Starting at epoch 0, regardless of previous training progress")
+else:
+    # fetch metadata if available
+    try:
+        download_blob(args.checkpoint_bucket, metadata_gcs_src_path,
+                metadata_file_dst_path)
+        print("Downloaded previous training metadata")
+        with open(metadata_file_dst_path, 'r') as f:
+            try:
+                metadata = yaml.safe_load(f)
+                print(f"Loaded previous training metadata: {metadata}")
+                # grab the latest model name (corresponding to the last epoch)
+                latest_model_name = metadata['latest_model_name']
+                # download the model
+                model_gcs_src_path = os.path.join(args.checkpoint_path, latest_model_name)
+                model_file_dst_path = os.path.join(args.save_tmp_model_to, latest_model_name)
+                try:
+                    download_blob(args.checkpoint_bucket, model_gcs_src_path,
+                            model_file_dst_path)
+                    print("**Downloaded a saved model**")
+                    # load the saved model's params into the model class
+                    s.loadParameters(model_file_dst_path);
+                    print("Model %s loaded from previous state!"%model_file_dst_path);
+                    it = int(os.path.splitext(os.path.basename(model_file_dst_path))[0][5:]) + 1
+                except google.cloud.exceptions.NotFound:
+                    print("**No saved model found**")
+            except yaml.YAMLError as exc:
+                print(exc)
+                metadata = default_metadata
+    except google.cloud.exceptions.NotFound:
+        print("**No previous training metadata found**")
+
+    # exit if previous training run finished
+    if 'is_done' in metadata and metadata['is_done']:
+        print("Terminating... training for this run has already completed")
+        quit()
+
+if(args.initial_model != ""):
+    raise "Error: TODO"
     s.loadParameters(args.initial_model);
     print("Model %s loaded!"%args.initial_model);
 
@@ -145,7 +200,7 @@ for ii in range(0,it-1):
 
 ## Evaluation code
 if args.eval == True:
-        
+    raise "Error: TODO"
     sc, lab = s.evaluateFromListSave(test_list, print_interval=100, feat_dir=args.save_tmp_feats_to, test_path=test_path)
     result = tuneThresholdfromScore(sc, lab, [1, 0.1]);
     print('EER %2.4f'%result[1])
@@ -177,14 +232,16 @@ clr = s.updateLearningRate(1)
 print(f"Creating parent dir for path={args.save_tmp_model_to}")
 Path(args.save_tmp_model_to).parent.mkdir(parents=True, exist_ok=True)
 
-while(1):   
+while(1):
     print(time.strftime("%Y-%m-%d %H:%M:%S"), it, "Training %s with LR %f..."%(args.model,max(clr)));
 
     ## Train network
     loss, traineer = s.train_network(loader=trainLoader);
 
+
     ## Validate and save
     if it % args.test_interval == 0:
+        raise "Error: TODO"
 
         print(time.strftime("%Y-%m-%d %H:%M:%S"), it, "Evaluating...");
 
@@ -199,14 +256,13 @@ while(1):
 
         clr = s.updateLearningRate(args.lr_decay) 
 
-        s.saveParameters(args.save_tmp_model_to+"/model%09d.model"%it);
-        
+
         ## touch the output file/dir
         #Path(args.save_tmp_model_to).parent.mkdir(parents=True, exist_ok=True)
         #with open(args.save_tmp_model_to, 'w') as eerfile:
         #    eerfile.write(f"model iter: {it}")
         #    eerfile.write('%.4f'%result[1])
-            
+
         eerfile = open(args.save_tmp_model_to+"/model%09d.eer"%it, 'w')
         eerfile.write('%.4f'%result[1])
         eerfile.close()
@@ -223,8 +279,33 @@ while(1):
 
         scorefile.flush()
 
+    # save model file for this epoch
+    model_name = "model%09d.model"%it
+    model_filename = os.path.join(args.save_tmp_model_to, model_name)
+    s.saveParameters(model_filename);
+    # update metadata
+    metadata['latest_model_name'] = model_name
+    metadata['num_epochs'] = it
+    # dump metadata to yaml file
+    with open(metadata_file_dst_path, 'w') as f:
+        try:
+            yaml.dump(metadata, f)
+            print("Saved current training metadata")
+        except yaml.YAMLError as exc:
+            print(exc)
+    # upload model to GCS
+    model_gcs_dst_path = os.path.join(args.checkpoint_path, model_name)
+    model_file_src_path = os.path.join(args.save_tmp_model_to, model_name)
+    upload_blob(args.checkpoint_bucket, model_gcs_dst_path,
+            model_file_src_path)
+    # upload metadata to GCS
+    metadata_gcs_dst_path = metadata_gcs_src_path
+    metadata_file_src_path = metadata_file_dst_path
+    upload_blob(args.checkpoint_bucket, metadata_gcs_dst_path,
+            metadata_file_src_path)
+
     if it >= args.max_epoch:
-        quit();
+        break
 
     it+=1;
     print("");
@@ -232,6 +313,19 @@ while(1):
 scorefile.close();
 
 
+# save "done" to metadata so it restarts on retry
+metadata['is_done'] = True
 
+# dump metadata to yaml file
+with open(metadata_file_dst_path, 'w') as f:
+    try:
+        yaml.dump(metadata, f)
+        print("Saved current training metadata")
+    except yaml.YAMLError as exc:
+        print(exc)
 
-
+# upload metadata to GCS
+metadata_gcs_dst_path = metadata_gcs_src_path
+metadata_file_src_path = metadata_file_dst_path
+upload_blob(args.checkpoint_bucket, metadata_gcs_dst_path,
+        metadata_file_src_path)

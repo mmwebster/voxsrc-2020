@@ -8,20 +8,31 @@ import os
 from google.cloud import storage
 from google.auth import compute_engine
 
+# @TODO Reorganize this as a "gcs_utils.py" and abstract away any
+#       dataset-specific and non-gcs-specific stuff
+
+def upload_blob(bucket_name, dst_blob_name, src_file_name):
+    storage_client = storage.Client(
+            credentials=compute_engine.Credentials(),
+            project='voxsrc-2020-dev-1')
+
+    bucket = storage_client.bucket(bucket_name)
+    blob = bucket.blob(dst_blob_name)
+    blob.upload_from_filename(src_file_name)
 
 # @brief Download a blob from GCS
 # @credit Google Cloud SDK docs
-def download_blob(bucket_name, source_blob_name, destination_file_name):
+def download_blob(bucket_name, src_blob_name, dst_file_name):
     """Downloads a blob from the bucket."""
     storage_client = storage.Client(
             credentials=compute_engine.Credentials(),
             project='voxsrc-2020-dev-1')
 
     bucket = storage_client.bucket(bucket_name)
-    blob = bucket.blob(source_blob_name)
-    blob.download_to_filename(destination_file_name)
+    blob = bucket.blob(src_blob_name)
+    blob.download_to_filename(dst_file_name)
 
-    print(f"Blob {source_blob_name} downloaded to {destination_file_name}.")
+    print(f"Blob {src_blob_name} downloaded to {dst_file_name}.")
 
 # @brief Collection of functions for downloading, extracting, and
 #        transcoding/uncompressing a dataset stored on GCS
