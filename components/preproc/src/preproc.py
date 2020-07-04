@@ -1,29 +1,36 @@
 #!/usr/bin/env python3
+import time
 import argparse
-from pathlib import Path
-import torch
-import subprocess
+from data_fetch import download_gcs_dataset, extract_gcs_dataset, \
+                     transcode_gcs_dataset, set_loc_paths_from_gcs_dataset
 
 # Defining and parsing the command-line arguments
-parser = argparse.ArgumentParser(description='Model trainer')
-parser.add_argument('--input1-path', type=str)
-# kubeflow autogens this output path
-parser.add_argument('--model-save-path', type=str)
+parser = argparse.ArgumentParser(description='Data preprocessor')
+
+parser.add-argument('--data-bucket', type=str)
+parser.add-argument('--test-list', type=str)
+parser.add-argument('--train-list', type=str)
+parser.add-argument('--test-path', type=str)
+parser.add-argument('--train-path', type=str)
 args = parser.parse_args()
 
-print(f"Received upstream data via path: {args.input1_path}")
-print(f"Printing contents...")
-with open(args.input1_path, 'r') as input1_file:
-    for x, line in enumerate(input1_file):
-        print(f"{x}: {line}")
+# download,extract,transcode dataset blobs from GCS
+download_gcs_dataset(args)
+extract_gcs_dataset(args)
+transcode_gcs_dataset(args)
 
-print(f"Cuda availability: {torch.cuda.is_available()}")
-print(f"Device count: {torch.cuda.device_count()}")
-print(f"Device name: {torch.cuda.get_device_name(0)}")
+# set new lists and data paths
+train_list, test_list, train_path, test_path \
+    = set_loc_paths_from_gcs_dataset(args)
 
-print(f"Saving trained model to: {args.model_save_path}")
-# touch the output file/dir
-Path(args.model_save_path).parent.mkdir(parents=True, exist_ok=True)
-# write contents
-with open(args.model_save_path, 'w') as model_save_file:
-    model_save_file.write("[model]\n")
+# perform trivial operation on audio data
+time.sleep(1)
+print("TODO")
+
+# recompress/transcode
+print("TODO")
+
+# archive into tar
+print("TODO")
+
+# upload dataset blobs to GCS
