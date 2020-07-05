@@ -21,7 +21,7 @@ def baseline_repro_pipeline(
     batch_size: int = 5,
     max_epoch: int = 1,
 ):
-    save_money = False
+    use_preemptible = False
     use_gpu = False
     checkpoint_path = '{{workflow.uid}}/'
 
@@ -41,7 +41,7 @@ def baseline_repro_pipeline(
     # @note This autoscales an autoscalable node pool from 0->1 that
     #       matches the corresponding config. Autoscaled nodes will be
     #       deactivated on GCP after 10 minutes of inactivity
-    if save_money:
+    if use_preemptible:
         train_task\
             .apply(gcp.use_preemptible_nodepool(hard_constraint=True))\
             .set_retry(5)
