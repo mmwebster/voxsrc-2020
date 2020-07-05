@@ -8,7 +8,7 @@ inputs:
   - {name: train_path, type: String}
 implementation:
   container:
-    image: gcr.io/voxsrc-2020-dev-1/preproccesor:latest
+    image: gcr.io/voxsrc-2020-dev-1/preprocessor:latest
     command: [
       python3, /src/preproc.py,
       --data-bucket, {inputValue: data_bucket},

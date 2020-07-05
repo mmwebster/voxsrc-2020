@@ -32,20 +32,20 @@ def baseline_repro_pipeline(
     )
 
     train_task = train_op(
-        data_bucket = preproc_task.outputs['data_bucket'],
+        data_bucket = data_bucket,
         test_list = test_list,
         train_list = train_list,
         test_path = test_path,
         train_path = train_path,
         batch_size = batch_size,
         max_epoch = max_epoch,
-    )
-     #.apply(gcp.use_preemptible_nodepool(hard_constraint=True))\
-     #.set_gpu_limit(1)\
-     #.add_node_selector_constraint('cloud.google.com/gke-accelerator',
-     #        'nvidia-tesla-t4')
+    ).apply(gcp.use_preemptible_nodepool(hard_constraint=True))\
+            .set_gpu_limit(1)\
+            .add_node_selector_constraint('cloud.google.com/gke-accelerator',
+                    'nvidia-tesla-t4')
 
-     train_task.after(preproc_task)
+    train_task.after(preproc_task)
+
 
 # generate compressed pipeline file for upload
 if __name__ == '__main__':
