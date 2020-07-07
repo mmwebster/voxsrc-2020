@@ -11,6 +11,9 @@ gcloud container clusters resize kf-train-6 --node-pool kf-train-6-cpu-pool-v1 -
 # list all node pools in default cluster
 gcloud container node-pools list
 
+# add IAM user
+gcloud projects add-iam-policy-binding [PROJECT] --member=user:[EMAIL] --role=roles/iap.httpsResourceAccessor
+
 
 ##############################
 # Docker commands

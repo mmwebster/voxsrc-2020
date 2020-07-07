@@ -17,9 +17,14 @@ def baseline_repro_pipeline(
     train_list: str = 'vox2_no_cuda.txt',
     test_path: str = 'vox1_no_cuda.tar.gz',
     train_path: str = 'vox2_no_cuda.tar.gz',
+    checkpoint_bucket: str = 'voxsrc-2020-checkpoints',
     batch_size: int = 5,
     max_epoch: int = 1,
 ):
+    use_preemptible = False
+    use_gpu = False
+    checkpoint_path = '{{workflow.uid}}/'
+
     train_task = train_op(
         data_bucket = data_bucket,
         test_list = test_list,
@@ -28,10 +33,25 @@ def baseline_repro_pipeline(
         train_path = train_path,
         batch_size = batch_size,
         max_epoch = max_epoch,
-    ).apply(gcp.use_preemptible_nodepool(hard_constraint=True))\
-     .set_gpu_limit(1)\
-     .add_node_selector_constraint('cloud.google.com/gke-accelerator',
-             'nvidia-tesla-t4')
+        checkpoint_bucket = checkpoint_bucket,
+        checkpoint_path = checkpoint_path,
+    )
+
+    # @brief Require training to run on a preemtible node pool
+    # @note This autoscales an autoscalable node pool from 0->1 that
+    #       matches the corresponding config. Autoscaled nodes will be
+    #       deactivated on GCP after 10 minutes of inactivity
+    if use_preemptible:
+        train_task\
+            .apply(gcp.use_preemptible_nodepool(hard_constraint=True))\
+            .set_retry(5)
+
+    # @brief Select only a node pool with 1 Nvidia Tesla T4
+    if use_gpu:
+        train_task\
+            .set_gpu_limit(1)\
+            .add_node_selector_constraint('cloud.google.com/gke-accelerator',
+                    'nvidia-tesla-t4')
 
 # generate compressed pipeline file for upload
 if __name__ == '__main__':
