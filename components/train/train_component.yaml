@@ -16,7 +16,7 @@ implementation:
   container:
     image: gcr.io/voxsrc-2020-dev-1/trainer:latest
     command: [
-      python3, /src/voxceleb_trainer/trainSpeakerNet.py,
+      python3, /src/trainSpeakerNet.py,
       --data-bucket, {inputValue: data_bucket},
       --test_list, {inputValue: test_list},
       --train_list, {inputValue: train_list},
