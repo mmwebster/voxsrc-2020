@@ -19,11 +19,11 @@ import yaml
 import os
 import pwd
 import google
+import wandb
 
 # for local runs, use this for unique checkpoint dirs across team members
 def get_username():
     return pwd.getpwuid( os.getuid() )[ 0 ]
-
 
 parser = argparse.ArgumentParser(description = "SpeakerNet");
 
@@ -37,7 +37,8 @@ parser = argparse.ArgumentParser(description = "SpeakerNet");
 parser.add_argument('--data-bucket', type=str)
 parser.add_argument('--save-tmp-data-to', type=str, default="./tmp/data/")
 parser.add_argument('--skip-data-fetch', action='store_true')
-parser.add_argument('--force-training-reset', action='store_true')
+parser.add_argument('--reset-training', action='store_true', help='Reset \
+        training to first epoch, regardless of previously saved model checkpoints')
 parser.add_argument('--save-tmp-model-to', type=str, default="./tmp/model/");
 parser.add_argument('--save-tmp-results-to', type=str, default="./tmp/results/");
 parser.add_argument('--save-tmp-feats-to', type=str, default="./tmp/feats/");
@@ -57,6 +58,7 @@ parser.add_argument('--max_seg_per_spk', type=int, default=100, help='Maximum nu
 parser.add_argument('--nDataLoaderThread', type=int, default=8, help='Number of loader threads');
 
 ## Training details
+# @TODO disentangle learning rate decay from validation
 parser.add_argument('--test_interval', type=int, default=10, help='Test and save every [test_interval] epochs');
 parser.add_argument('--max_epoch',      type=int, default=100, help='Maximum number of epochs');
 # ^^^ use --max_epoch=1 for local testing
@@ -93,6 +95,8 @@ parser.add_argument('--encoder_type', type=str, default="SAP",  help='Type of en
 parser.add_argument('--nOut', type=int,         default=512,    help='Embedding size in the last FC layer');
 
 args = parser.parse_args();
+
+wandb.init(project="voxsrc-2020-v1", config=args)
 
 train_list, test_list, train_path, test_path = [None, None, None, None]
 
@@ -151,7 +155,7 @@ metadata_file_dst_path = os.path.join(args.save_tmp_model_to, METADATA_NAME)
 default_metadata = {'is_done': False}
 metadata = default_metadata
 
-if args.force_training_reset:
+if args.reset_training:
     print("Starting at epoch 0, regardless of previous training progress")
 else:
     # fetch metadata if available
@@ -238,10 +242,10 @@ while(1):
     ## Train network
     loss, traineer = s.train_network(loader=trainLoader);
 
+    wandb.log({'epoch': it, 'loss': loss, 'train_EER': traineer, 'lr': clr})
+
     ## Validate, save, update learning rate
     if it % args.test_interval == 0:
-        raise "Error: TODO"
-
         print(time.strftime("%Y-%m-%d %H:%M:%S"), it, "Evaluating...");
 
         sc, lab = s.evaluateFromListSave(test_list, print_interval=100,

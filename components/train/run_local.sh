@@ -3,6 +3,8 @@
 # @param --skip-data-fetch to read local data that was already fetched from GCS
 # @param --force-training-reset to re-train even if there is existing training data
 #                               (required to reset dev checkpoints)
+# @param --test_interval=X Set X to change num epochs between compute of val EER,
+#                          but also, LR decay
 # @note Flags for the "small" dataset:
 #         --test_list=vox1_test_list_small.txt \
 #         --train_list=vox2_train_list_small.txt \
