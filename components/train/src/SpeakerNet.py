@@ -30,7 +30,7 @@ class SpeakerNet(nn.Module):
         self.__S__ = SpeakerNetModel(**argsdict).to(self.device);
 
         if trainfunc == 'angleproto':
-            self.__L__ = AngleProtoLoss().to(self.device)
+            self.__L__ = AngleProtoLoss(self.device).to(self.device)
             self.__train_normalize__    = True
             self.__test_normalize__     = True
         elif trainfunc == 'ge2e':
