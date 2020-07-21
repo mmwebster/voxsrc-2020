@@ -23,7 +23,7 @@ def baseline_repro_pipeline(
 ):
     use_preemptible = False
     use_gpu = False
-    checkpoint_path = '{{workflow.uid}}/'
+    run_id = '{{workflow.uid}}'
 
     train_task = train_op(
         data_bucket = data_bucket,
@@ -34,7 +34,7 @@ def baseline_repro_pipeline(
         batch_size = batch_size,
         max_epoch = max_epoch,
         checkpoint_bucket = checkpoint_bucket,
-        checkpoint_path = checkpoint_path,
+        run_id = run_id,
     )
 
     # @brief Require training to run on a preemtible node pool

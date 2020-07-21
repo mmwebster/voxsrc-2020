@@ -21,9 +21,15 @@ import pwd
 import google
 import wandb
 
-# for local runs, use this for unique checkpoint dirs across team members
-def get_username():
-    return pwd.getpwuid( os.getuid() )[ 0 ]
+# @brief Generate a unique run ID when not run in kubeflow (kubeflow passes
+#        its own default run ID) in order to store training artifacts
+#        for resume after preemption
+# @note To manually resume a run outside of kubeflow, pass the run ID
+#       printed in the run with the "--run-id" flag
+def gen_run_id():
+    user_id = pwd.getpwuid( os.getuid() )[ 0 ]
+    wandb_id = wandb.util.generate_id()
+    return f"{user_id}-{wandb_id}"
 
 parser = argparse.ArgumentParser(description = "SpeakerNet");
 
@@ -45,7 +51,7 @@ parser.add_argument('--save-tmp-feats-to', type=str, default="./tmp/feats/");
 
 parser.add_argument('--checkpoint-bucket', type=str,
         default="voxsrc-2020-checkpoints-dev");
-parser.add_argument('--checkpoint-path', type=str, default=f"{get_username()}/");
+parser.add_argument('--run-id', type=str, default=f"{gen_run_id()}");
 
 # permanent/component outputs
 parser.add_argument('--save-model-to', type=str, default="./out/model.txt")
@@ -96,7 +102,7 @@ parser.add_argument('--nOut', type=int,         default=512,    help='Embedding 
 
 args = parser.parse_args();
 
-wandb.init(project="voxsrc-2020-v1", config=args)
+wandb.init(project="voxsrc-2020-v1", config=args, id=args.run_id, resume="allow")
 
 train_list, test_list, train_path, test_path = [None, None, None, None]
 
@@ -150,7 +156,7 @@ sumloss     = 0;
 
 # Check for training meta data from a previously preempted run
 METADATA_NAME = 'metadata.yaml'
-metadata_gcs_src_path = os.path.join(args.checkpoint_path, METADATA_NAME)
+metadata_gcs_src_path = os.path.join(args.run_id, METADATA_NAME)
 metadata_file_dst_path = os.path.join(args.save_tmp_model_to, METADATA_NAME)
 default_metadata = {'is_done': False}
 metadata = default_metadata
@@ -170,7 +176,7 @@ else:
                 # grab the latest model name (corresponding to the last epoch)
                 latest_model_name = metadata['latest_model_name']
                 # download the model
-                model_gcs_src_path = os.path.join(args.checkpoint_path, latest_model_name)
+                model_gcs_src_path = os.path.join(args.run_id, latest_model_name)
                 model_file_dst_path = os.path.join(args.save_tmp_model_to, latest_model_name)
                 try:
                     download_blob(args.checkpoint_bucket, model_gcs_src_path,
@@ -204,7 +210,6 @@ for ii in range(0,it-1):
 
 ## Evaluation code
 if args.eval == True:
-    raise "Error: TODO"
     sc, lab = s.evaluateFromListSave(test_list, print_interval=100, feat_dir=args.save_tmp_feats_to, test_path=test_path)
     result = tuneThresholdfromScore(sc, lab, [1, 0.1]);
     print('EER %2.4f'%result[1])
@@ -236,13 +241,15 @@ clr = s.updateLearningRate(1)
 print(f"Creating parent dir for path={args.save_tmp_model_to}")
 Path(args.save_tmp_model_to).parent.mkdir(parents=True, exist_ok=True)
 
+wandb_log = {'epoch': 0, 'loss': 0, 'train_EER': 0, 'lr': 0, 'val_EER': 0}
+
 while(1):
     print(time.strftime("%Y-%m-%d %H:%M:%S"), it, "Training %s with LR %f..."%(args.model,max(clr)));
 
     ## Train network
     loss, traineer = s.train_network(loader=trainLoader);
 
-    wandb.log({'epoch': it, 'loss': loss, 'train_EER': traineer, 'lr': clr})
+    wandb_log.update({'epoch': it, 'loss': loss, 'train_EER': traineer})
 
     ## Validate, save, update learning rate
     if it % args.test_interval == 0:
@@ -271,6 +278,8 @@ while(1):
         eerfile.close()
         ret = '%.4f'%result[1]
 
+        wandb_log.update({'lr': clr, 'val_EER': result[1]})
+
     else:
 
         print(time.strftime("%Y-%m-%d %H:%M:%S"), "LR %f, TEER %2.2f, TLOSS %f"%( max(clr), traineer, loss));
@@ -282,16 +291,12 @@ while(1):
 
         scorefile.flush()
 
-    # save param dict for this epoch
+    wandb.log(wandb_log)
+
+    # save model file for this epoch
     model_name = "model%09d.model"%it
     model_filename = os.path.join(args.save_tmp_model_to, model_name)
     s.saveParameters(model_filename);
-    
-    # save model for this epoch
-    model_name = "model%09d.pt"%it
-    model_filename = os.path.join(args.save_tmp_model_to, model_name)
-    s.saveModel(model_filename);
-
     # update metadata
     metadata['latest_model_name'] = model_name
     metadata['num_epochs'] = it
@@ -303,7 +308,7 @@ while(1):
         except yaml.YAMLError as exc:
             print(exc)
     # upload model to GCS
-    model_gcs_dst_path = os.path.join(args.checkpoint_path, model_name)
+    model_gcs_dst_path = os.path.join(args.run_id, model_name)
     model_file_src_path = os.path.join(args.save_tmp_model_to, model_name)
     upload_blob(args.checkpoint_bucket, model_gcs_dst_path,
             model_file_src_path)

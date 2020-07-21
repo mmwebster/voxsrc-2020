@@ -5,6 +5,11 @@
 #                               (required to reset dev checkpoints)
 # @param --test_interval=X Set X to change num epochs between compute of val EER,
 #                          but also, LR decay
+# @param --run-id=X Set X to resume an interrupted run, loading
+#                   artifacts saved under the previously generated run
+#                   ID. This automatically happens when kubeflow runs
+#                   are preempted, but must be manually passed for runs
+#                   outside of kubeflow.
 # @note Flags for the "small" dataset:
 #         --test_list=vox1_test_list_small.txt \
 #         --train_list=vox2_train_list_small.txt \

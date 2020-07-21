@@ -9,7 +9,7 @@ inputs:
   - {name: batch_size, type: Integer}
   - {name: max_epoch, type: Integer}
   - {name: checkpoint_bucket, type: String}
-  - {name: checkpoint_path, type: String}
+  - {name: run_id, type: String}
 outputs:
 - {name: trained_model, type: GCSPath}
 implementation:
@@ -25,7 +25,7 @@ implementation:
       --batch_size, {inputValue: batch_size},
       --max_epoch, {inputValue: max_epoch},
       --checkpoint-bucket, {inputValue: checkpoint_bucket},
-      --checkpoint-path, {inputValue: checkpoint_path},
+      --run-id {inputValue: run_id},
 
       --save-model-to, {outputPath: trained_model},
     ]
