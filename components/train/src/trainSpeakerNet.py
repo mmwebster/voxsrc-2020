@@ -60,7 +60,7 @@ parser.add_argument('--nDataLoaderThread', type=int, default=8, help='Number of 
 parser.add_argument('--test_interval', type=int, default=10, help='Test and save every [test_interval] epochs');
 parser.add_argument('--max_epoch',      type=int, default=100, help='Maximum number of epochs');
 # ^^^ use --max_epoch=1 for local testing
-parser.add_argument('--trainfunc', type=str, default="amsoftmax",    help='Loss function');
+parser.add_argument('--trainfunc', type=str, default="angleproto",    help='Loss function');
 parser.add_argument('--optimizer', type=str, default="adam", help='sgd or adam');
 
 ## Learning rates
@@ -238,8 +238,7 @@ while(1):
     ## Train network
     loss, traineer = s.train_network(loader=trainLoader);
 
-
-    ## Validate and save
+    ## Validate, save, update learning rate
     if it % args.test_interval == 0:
         raise "Error: TODO"
 
