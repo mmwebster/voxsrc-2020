@@ -1,4 +1,4 @@
-name: voxsrc2020
+name: voxsrc-2020
 channels:
   - conda-forge
   - defaults
@@ -84,5 +84,4 @@ dependencies:
     - websocket-client==0.57.0
     - wrapt==1.12.1
     - zipp==3.1.0
-prefix: /opt/conda/envs/voxsrc2020
-
+prefix: /opt/conda/envs/voxsrc-2020
