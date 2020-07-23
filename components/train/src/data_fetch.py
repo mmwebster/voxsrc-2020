@@ -11,10 +11,21 @@ from google.auth import compute_engine
 # @TODO Reorganize this as a "gcs_utils.py" and abstract away any
 #       dataset-specific and non-gcs-specific stuff
 
+def get_storage_client():
+    # grab storage client, with credentials from compute engine unless
+    # the google sdk credentials env var is set (like what we do in
+    # local dev)
+    if "GOOGLE_APPLICATION_CREDENTIALS" in os.environ:
+        # use configured user credentials
+        return storage.Client(project='voxsrc-2020-dev-1')
+    else:
+        # use embedded compute engine (GCP) credentials
+        return storage.Client(
+                credentials=compute_engine.Credentials(),
+                project='voxsrc-2020-dev-1')
+
 def upload_blob(bucket_name, dst_blob_name, src_file_name):
-    storage_client = storage.Client(
-            credentials=compute_engine.Credentials(),
-            project='voxsrc-2020-dev-1')
+    storage_client = get_storage_client()
 
     bucket = storage_client.bucket(bucket_name)
     blob = bucket.blob(dst_blob_name)
@@ -24,9 +35,7 @@ def upload_blob(bucket_name, dst_blob_name, src_file_name):
 # @credit Google Cloud SDK docs
 def download_blob(bucket_name, src_blob_name, dst_file_name):
     """Downloads a blob from the bucket."""
-    storage_client = storage.Client(
-            credentials=compute_engine.Credentials(),
-            project='voxsrc-2020-dev-1')
+    storage_client = get_storage_client()
 
     bucket = storage_client.bucket(bucket_name)
     blob = bucket.blob(src_blob_name)
