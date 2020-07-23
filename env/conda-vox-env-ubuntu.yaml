@@ -36,21 +36,28 @@ dependencies:
   - x264=1!152.20180806=h14c3975_0
   - xz=5.2.5=h516909a_0
   - zlib=1.2.11=h516909a_1006
+  - ffmpeg=4.2
   - pip:
     - attrs==19.3.0
     - cachetools==4.1.1
     - chardet==3.0.4
     - click==7.1.2
     - cloudpickle==1.5.0
+    - configparser==5.0.0
     - deprecated==1.2.10
+    - docker-pycreds==0.4.0
     - ffmpeg==1.4
     - future==0.18.2
+    - gitdb==4.0.5
+    - gitpython==3.1.7
     - google-api-core==1.21.0
     - google-auth==1.18.0
     - google-cloud-core==1.3.0
     - google-cloud-storage==1.29.0
     - google-resumable-media==0.5.1
     - googleapis-common-protos==1.52.0
+    - gql==0.2.0
+    - graphql-core==1.1
     - idna==2.10
     - importlib-metadata==1.7.0
     - joblib==0.16.0
@@ -59,8 +66,12 @@ dependencies:
     - kfp-server-api==0.5.0
     - kubernetes==11.0.0
     - numpy==1.19.0
+    - nvidia-ml-py3==7.352.0
     - oauthlib==3.1.0
+    - pathtools==0.1.2
+    - promise==2.3
     - protobuf==3.12.2
+    - psutil==5.7.2
     - pyasn1==0.4.8
     - pyasn1-modules==0.2.8
     - pyrsistent==0.16.0
@@ -73,14 +84,20 @@ dependencies:
     - rsa==4.6
     - scikit-learn==0.23.1
     - scipy==1.5.0
+    - sentry-sdk==0.16.1
+    - shortuuid==1.0.1
     - six==1.15.0
+    - smmap==3.0.4
     - strip-hints==0.1.9
+    - subprocess32==3.5.4
     - tabulate==0.8.7
     - threadpoolctl==2.1.0
     - torch==1.5.0
     - torchaudio==0.5.0
     - tqdm==4.47.0
     - urllib3==1.25.9
+    - wandb==0.9.3
+    - watchdog==0.10.3
     - websocket-client==0.57.0
     - wrapt==1.12.1
     - zipp==3.1.0
