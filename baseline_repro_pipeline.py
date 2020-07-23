@@ -2,6 +2,7 @@ import kfp.dsl as dsl
 import kfp.gcp as gcp
 import kfp.components as comp
 import os
+from kubernetes import client as k8s_client
 
 train_op = comp.load_component_from_file(os.path.join(
     "./components/train/", 'train_component.yaml'))
@@ -20,6 +21,7 @@ def baseline_repro_pipeline(
     checkpoint_bucket: str = 'voxsrc-2020-checkpoints',
     batch_size: int = 5,
     max_epoch: int = 1,
+    n_speakers: int = 2,
 ):
     use_preemptible = False
     use_gpu = False
@@ -35,7 +37,15 @@ def baseline_repro_pipeline(
         max_epoch = max_epoch,
         checkpoint_bucket = checkpoint_bucket,
         run_id = run_id,
+        n_speakers = n_speakers,
     )
+
+    # add Weights & Biases credentials
+    if "WANDB_API_KEY" in os.environ:
+        train_task.add_env_variable(k8s_client.V1EnvVar(name='WANDB_API_KEY',
+            value=os.environ["WANDB_API_KEY"]))
+    else:
+        raise 'Error: No WandB API key set in environment'
 
     # @brief Require training to run on a preemtible node pool
     # @note This autoscales an autoscalable node pool from 0->1 that
