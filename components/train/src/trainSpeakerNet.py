@@ -279,10 +279,16 @@ while(1):
 
         scorefile.flush()
 
-    # save model file for this epoch
+    # save param dict for this epoch
     model_name = "model%09d.model"%it
     model_filename = os.path.join(args.save_tmp_model_to, model_name)
     s.saveParameters(model_filename);
+    
+    # save model for this epoch
+    model_name = "model%09d.pt"%it
+    model_filename = os.path.join(args.save_tmp_model_to, model_name)
+    s.saveModel(model_filename);
+
     # update metadata
     metadata['latest_model_name'] = model_name
     metadata['num_epochs'] = it
