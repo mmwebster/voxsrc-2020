@@ -4,7 +4,7 @@ import sys
 import torch
 import manifold
 
-sys.path.insert(0, '../train/src')
+sys.path.insert(0, '../../components/train/src')
 from SpeakerNet import SpeakerNet
 from DatasetLoader import loadWAV
 
@@ -93,10 +93,10 @@ def get_embeddings(model, test_list, test_path, max_frames=1000):
 
 if __name__ == '__main__':
     """ Usage:
-    python3 visualize.py  --projection 3d --algorithm umap              \
-                          -m ../train/tmp/model/model000000001.pt       \
-                          --test_list ../../data/lists/vox1_no_cuda.txt \
-                          --test_path ../train/tmp/data/vox1_no_cuda
+    python3 visualize.py  --projection 3d --algorithm umap                         \
+                          -m ../../components/train/tmp/model/model000000001.pt    \
+                          --test_list ../../data/lists/vox1_no_cuda.txt            \
+                          --test_path ../../components/train/tmp/data/vox1_no_cuda
     """
     import argparse
     parser = argparse.ArgumentParser();
