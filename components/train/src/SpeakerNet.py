@@ -273,6 +273,16 @@ class SpeakerNet(nn.Module):
     def saveParameters(self, path):
         
         torch.save(self.state_dict(), path);
+        
+        
+    ## ===== ===== ===== ===== ===== ===== ===== =====
+    ## Save model
+    ## ===== ===== ===== ===== ===== ===== ===== =====
+
+    def saveModel(self, path):
+        
+        torch.save(self, path);
+
 
 
     ## ===== ===== ===== ===== ===== ===== ===== =====
