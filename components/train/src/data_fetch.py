@@ -144,7 +144,7 @@ def transcode_gcs_dataset(args):
 def set_loc_paths_from_gcs_dataset(args):
     # set new lists and data paths
     train_list = os.path.join(args.save_tmp_data_to, args.train_list)
-    test_list = os.path.join(args.save_tmp_data_to, args.train_list)
+    test_list = os.path.join(args.save_tmp_data_to, args.test_list)
     # @note remove the .tar.gz to reference extracted directories
     train_path = os.path.join(args.save_tmp_data_to,
             args.train_path.split(".tar.gz")[0])

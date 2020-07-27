@@ -16,6 +16,8 @@ from loss.softmax import SoftmaxLoss
 from loss.protoloss import ProtoLoss
 from loss.pairwise import PairwiseLoss
 
+import wandb
+
 class SpeakerNet(nn.Module):
 
     def __init__(self, device, max_frames, lr = 0.0001, margin = 1, scale = 1, hard_rank = 0, hard_prob = 0, model="alexnet50", nOut = 512, nSpeakers = 1000, optimizer = 'adam', encoder_type = 'SAP', normalize = True, trainfunc='contrastive', **kwargs):
@@ -30,7 +32,7 @@ class SpeakerNet(nn.Module):
         self.__S__ = SpeakerNetModel(**argsdict).to(self.device);
 
         if trainfunc == 'angleproto':
-            self.__L__ = AngleProtoLoss().to(self.device)
+            self.__L__ = AngleProtoLoss(self.device).to(self.device)
             self.__train_normalize__    = True
             self.__test_normalize__     = True
         elif trainfunc == 'ge2e':
