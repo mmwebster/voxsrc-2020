@@ -48,6 +48,7 @@ parser.add_argument('--reset-training', action='store_true', help='Reset \
 parser.add_argument('--save-tmp-model-to', type=str, default="./tmp/model/");
 parser.add_argument('--save-tmp-results-to', type=str, default="./tmp/results/");
 parser.add_argument('--save-tmp-feats-to', type=str, default="./tmp/feats/");
+parser.add_argument('--save-tmp-wandb-to', type=str, default="./tmp/");
 
 parser.add_argument('--checkpoint-bucket', type=str,
         default="voxsrc-2020-checkpoints-dev");
@@ -102,7 +103,12 @@ parser.add_argument('--nOut', type=int,         default=512,    help='Embedding 
 
 args = parser.parse_args();
 
-wandb.init(project="voxsrc-2020-v1", config=args, id=args.run_id, resume="allow")
+# touch wandb tmp dir
+print(f"Creating directory {args.save_tmp_wandb_to}")
+Path(args.save_tmp_wandb_to).mkdir(parents=True, exist_ok=True)
+
+wandb.init(project="voxsrc-2020-v1", config=args, id=args.run_id,
+        resume="allow", dir=args.save_tmp_wandb_to)
 
 train_list, test_list, train_path, test_path = [None, None, None, None]
 
