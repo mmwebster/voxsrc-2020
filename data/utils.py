@@ -1,19 +1,36 @@
 #!/usr/bin/python3
+
+import sys
+
+# Add common src dir to python import path (varies between runs on and
+# off the training cluster)
+sys.path.insert(1, "../common/src/")
+
 from shutil import copyfile
 import os
 from tqdm import tqdm
 import argparse
 import subprocess
-import sys
+
+from data_fetch import download_gcs_dataset, extract_tar, \
+                     transcode_gcs_dataset, set_loc_paths_from_gcs_dataset
 
 # Usage example:
 #   python utils.py --action copy_train
 
 parser = argparse.ArgumentParser(description='Voxceleb Dataset Utils')
 
-# actions and their params
+# copy a subset of the training data
 parser.add_argument('--copy-train', action='store_true')
+
+# copy a subset of the testing data
 parser.add_argument('--copy-test', action='store_true')
+
+# download, extract, and transcode data from GCS for outside of the
+# cluster
+parser.add_argument('--install-local-dataset', action='store_true')
+parser.add_argument('--src-tar-path', required=('--install-local-dataset' in sys.argv))
+parser.add_argument('--dst-extract-path', required=('--install-local-dataset' in sys.argv))
 
 # compress a dataset
 parser.add_argument('--compress', action='store_true', help="requires --dir=[path to directory to compress]")
@@ -114,6 +131,13 @@ elif args.compress:
     dst_file = os.path.join(args.dst_dir, dataset_name + ".tar.gz")
     print(f"Destination file: {dst_file}")
     subprocess.call(f"tar -zcvf {dst_file} {args.src_dir}", shell=True)
+
+elif args.install_local_dataset:
+    print(f"Installing local dataset")
+    # @TODO get download working
+    # download_gcs_dataset(args)
+    extract_tar(args.src_tar_path, args.dst_extract_path)
+    # transcode_gcs_dataset(args)
 
 else:
     print(f"Invalid 'action' param: {args.action}")

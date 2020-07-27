@@ -75,6 +75,26 @@ def download_gcs_dataset(args):
         #                    cp {src} {dst}", shell=True)
     print(f"...Finished in {time.time() - start} (s)")
 
+# @brief New, better, dataset extractor. Takes an input path to a tar
+#        file, and output path to extract to
+# @note No tqdm since it doesn't work well on the cluster
+# @param src_tar_path Full path to a .tar.gz file
+# @param dst_extract_path Full path to the directory in which to place
+#                         the extracted data (using the same name as
+#                         in the .tar.gz)
+def extract_tar(src_tar_path, dst_extract_path):
+    start = time.time()
+    print(f"Extracting tar from {src_tar_path} to \
+            {dst_extract_path}/{src_tar_path.replace('.tar.gz','')}")
+
+    with open(os.devnull, 'w') as FNULL:
+        subprocess.call(f"tar -C {dst_extract_path} -zxvf {src_tar_path}",
+                shell=True, stdout=FNULL, stderr=subprocess.STDOUT)
+
+    print(f"...Finished in {time.time() - start} (s)")
+
+# @note kept for compatibility with existing cluster data extraction
+# @TODO change all consuming code to use extract_tar(...)
 def extract_gcs_dataset(args):
     start = time.time()
     print(f"Uncompressing train/test data blobs...")
@@ -85,7 +105,9 @@ def extract_gcs_dataset(args):
     for blob in tqdm(data_blobs):
         src  = os.path.join(args.save_tmp_data_to, blob)
         dst = args.save_tmp_data_to
+        print(f"src is {src}, dst is {dst}")
         with open(os.devnull, 'w') as FNULL:
+            print(f"running: tar -C {dst} -zxvf {src}")
             subprocess.call(f"tar -C {dst} -zxvf {src}",
                     shell=True, stdout=FNULL, stderr=subprocess.STDOUT)
 

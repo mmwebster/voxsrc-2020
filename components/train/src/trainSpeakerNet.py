@@ -1,7 +1,13 @@
 #!/usr/bin/python
 #-*- coding: utf-8 -*-
 
-import sys, time, os, argparse, socket
+import sys, os
+
+# Add common src dir to python import path (varies between runs on and
+# off the training cluster)
+sys.path.insert(1, os.getenv('VOX_COMMON_SRC_DIR'))
+
+import time, os, argparse, socket
 import numpy
 import pdb
 import torch
@@ -16,7 +22,6 @@ from data_fetch import download_gcs_dataset, extract_gcs_dataset, \
                      transcode_gcs_dataset, set_loc_paths_from_gcs_dataset,\
                      download_blob, upload_blob
 import yaml
-import os
 import pwd
 import google
 import wandb
