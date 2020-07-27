@@ -13,7 +13,7 @@ import argparse
 import subprocess
 
 from data_fetch import download_gcs_dataset, extract_tar, \
-                     transcode_gcs_dataset, set_loc_paths_from_gcs_dataset
+                     convert_aac_to_wav
 
 # Usage example:
 #   python utils.py --action copy_train
@@ -31,6 +31,7 @@ parser.add_argument('--copy-test', action='store_true')
 parser.add_argument('--install-local-dataset', action='store_true')
 parser.add_argument('--src-tar-path', required=('--install-local-dataset' in sys.argv))
 parser.add_argument('--dst-extract-path', required=('--install-local-dataset' in sys.argv))
+parser.add_argument('--save-tmp-data-to', default="./")
 
 # compress a dataset
 parser.add_argument('--compress', action='store_true', help="requires --dir=[path to directory to compress]")
@@ -136,8 +137,8 @@ elif args.install_local_dataset:
     print(f"Installing local dataset")
     # @TODO get download working
     # download_gcs_dataset(args)
-    extract_tar(args.src_tar_path, args.dst_extract_path)
-    # transcode_gcs_dataset(args)
+    # extract_tar(args.src_tar_path, args.dst_extract_path)
+    convert_aac_to_wav(args.dst_extract_path, args.save_tmp_data_to)
 
 else:
     print(f"Invalid 'action' param: {args.action}")

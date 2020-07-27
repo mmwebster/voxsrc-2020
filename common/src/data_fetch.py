@@ -113,6 +113,42 @@ def extract_gcs_dataset(args):
 
     print(f"...Finished in {time.time() - start} (s)")
 
+# @brief Newer, better, version of transcode_gcs_dataset, but with a
+#        different interface. Takes a directory containing AAC(.m4a)
+#        files, and creates a .wav for every .m4a, but doesn't delete
+#        the .m4a. .m4a files must be located at
+#        {src_extract_path}/*/*/*.m4a, as they are in the train data
+# @param src_extract_path The full path to the folder in which the
+#                         extracted audio training data is
+def convert_aac_to_wav(src_extract_path, save_tmp_data_to = "./"):
+    start = time.time()
+
+    print(f"Converting training data from AAC(.m4a)->WAV(.wav)...")
+
+    # get list of all nested files
+    files = glob.glob(os.path.join(src_extract_path, "*/*/*.m4a"))
+
+    # @note Achieved best transcoding/audio-decompression results
+    #       using GNU parallel, rather than multiple python processes
+    # @note Use GNU Parallel 4.2; version 3 takes 3 times as long
+    # @note Writing file names to file then cat and piping them back
+    #       to parallel is weird... but seems to be efficient
+    print("Writing wav file names to file")
+    transcode_list_path = os.path.join(save_tmp_data_to,
+            "transcode-list.txt")
+    with open(transcode_list_path, "w") as outfile:
+        outfile.write("\n".join(files))
+    print("Constructing command")
+    cmd = "cat %s | parallel ffmpeg -y -i {} -ac 1 -vn \
+            -acodec pcm_s16le -ar 16000 {.}.wav >/dev/null \
+            2>/dev/null" % (transcode_list_path)
+    print("Uncompressing audio AAC->WAV in parallel...")
+    subprocess.call(cmd, shell=True)
+
+    print(f"...Finished in {time.time() - start} (s)")
+
+
+# @TODO replace all uses of this with convert_aac_to_wav(...)
 def transcode_gcs_dataset(args):
     start = time.time()
     print(f"Transcoding training data from AAC->WAV...")
