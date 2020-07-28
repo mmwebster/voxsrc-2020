@@ -142,16 +142,6 @@ elif args.compress:
 #        ./datasets --dst-list-path ./lists --dst-tmp-path ./tmp
 #
 # @note Current datasets: no_cuda, full
-# @note To prevent local component runs from re-installing the
-#       dataset, symlink it to the pre-downloaded version. For example,
-#       with the "no_cuda" dataset, and while inside components/train/tmp/data/,
-#       you can run
-#
-#       ln -s ../../../../data/datasets/vox1_no_cuda ./vox1_no_cuda
-#       ln -s ../../../../data/datasets/vox2_no_cuda ./vox2_no_cuda
-#       ln -s ../../../../data/datasets/vox1_no_cuda.txt ./vox1_no_cuda.txt
-#       ln -s ../../../../data/datasets/vox2_no_cuda.txt ./vox2_no_cuda.txt
-#
 elif args.install_local_dataset:
     print(f"Installing local dataset")
 
@@ -181,6 +171,14 @@ elif args.install_local_dataset:
     aac_train_data_path = os.path.join(args.dst_data_path,
             f"vox2_{args.src_dataset}/")
     convert_aac_to_wav(aac_train_data_path, args.dst_tmp_path)
+
+    print("************  NOTICE ME  ************\n"
+           "-> You must now symlink these paths with (for example):\n"
+           "   ln -s ./datasets/vox1_no_cuda ../components/train/tmp/data/vox1_no_cuda\n"
+           "   ln -s ./datasets/vox2_no_cuda ../components/train/tmp/data/vox2_no_cuda\n"
+           "   ln -s ./datasets/vox1_no_cuda.txt ../components/train/tmp/data/vox1_no_cuda.txt\n"
+           "   ln -s ./datasets/vox2_no_cuda.txt ../components/train/tmp/data/vox2_no_cuda.txt\n")
+
 
 else:
     print(f"Invalid 'action' param: {args.action}")
