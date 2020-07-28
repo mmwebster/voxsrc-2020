@@ -119,7 +119,11 @@ train_list, test_list, train_path, test_path = [None, None, None, None]
 
 ## Fetch data from GCS if enabled
 if args.data_bucket is not None and not args.skip_data_fetch:
-    print("Performing GCS data fetch")
+    print("Installing dataset from GCS")
+    # @TODO mimic the --install-local-dataset function in
+    #       data/utils.py, using the newer functions that it invokes
+    #       in common/src/data_fetch.py
+
     # download, extract, transcode (compressed AAC->WAV) dataset
     download_gcs_dataset(args)
     extract_gcs_dataset(args)

@@ -84,16 +84,18 @@ def download_gcs_dataset(args):
     # download each blob
     for blob in blobs:
         NUM_CORES = 8 # hard-coded to prod/cluster machine type
-        src = f"gs://{args.data_bucket}/{blob}"
         dst = os.path.join(args.save_tmp_data_to, blob)
         # @TODO get gsutil working in a docker container in order to
         #       perform parallel composite downloads, which apparently
         #       are not supported by the python client
-        download_blob(args.data_bucket, blob, dst)
-        #subprocess.call(f"gsutil \
-        #                    -o 'GSUtil:parallel_thread_count=1' \
-        #                    -o 'GSUtil:sliced_object_download_max_components={NUM_CORES}' \
-        #                    cp {src} {dst}", shell=True)
+        list_or_tar_name = dst
+        extracted_data_name = dst.replace(".tar.gz","")
+        if os.path.exists(list_or_tar_name) or \
+                os.path.exists(extracted_data_name):
+            print(f"Skipping pre-downloaded blob: {dst}")
+        else:
+            print(f"Downloading blob: {dst}")
+            download_blob(args.data_bucket, blob, dst)
     print(f"...Finished in {time.time() - start} (s)")
 
 # @brief New, better, dataset extractor. Takes an input path to a tar
@@ -106,8 +108,8 @@ def download_gcs_dataset(args):
 def extract_tar(src_tar_path, dst_extract_path):
     start = time.time()
     dst_data_dir_name = os.path.basename(src_tar_path).replace('.tar.gz','')
-    print(f"Extracting tar from {src_tar_path} to \
-            {os.path.join(dst_extract_path, dst_data_dir_name)}")
+    print(f"Extracting tar from {src_tar_path} to "
+           "{os.path.join(dst_extract_path, dst_data_dir_name)}")
 
     with open(os.devnull, 'w') as FNULL:
         subprocess.call(f"tar -C {dst_extract_path} -zxvf {src_tar_path}",
@@ -124,14 +126,18 @@ def extract_gcs_dataset(args):
     data_blobs = [args.train_path, args.test_path]
 
     # uncompress data blobs
-    for blob in tqdm(data_blobs):
+    for blob in data_blobs:
         src  = os.path.join(args.save_tmp_data_to, blob)
         dst = args.save_tmp_data_to
-        print(f"src is {src}, dst is {dst}")
         with open(os.devnull, 'w') as FNULL:
-            print(f"running: tar -C {dst} -zxvf {src}")
-            subprocess.call(f"tar -C {dst} -zxvf {src}",
-                    shell=True, stdout=FNULL, stderr=subprocess.STDOUT)
+            dst_dir_name = os.path.join(dst,
+                    os.path.basename(src).replace(".tar.gz",""))
+            if os.path.exists(dst_dir_name):
+                print(f"Skipping extraction of file {src} into {dst_dir_name}")
+            else:
+                print(f"Extracting file {src} into {dst_dir_name}")
+                subprocess.call(f"tar -C {dst} -zxvf {src}",
+                        shell=True, stdout=FNULL, stderr=subprocess.STDOUT)
 
     print(f"...Finished in {time.time() - start} (s)")
 
@@ -186,38 +192,44 @@ def transcode_gcs_dataset(args):
         # get list of all nested files
         files = glob.glob(f"{blob_dir_path}/*/*/*.m4a")
 
-        # @note Achieved best transcoding/audio-decompression results
-        #       using GNU parallel, rather than multiple python processes
-        # @note Use GNU Parallel 4.2; version 3 takes 3 times as long
-        # @TODO speed this transcoding / audio compression stuff up more
-        USE_PARALLEL = True
-        if USE_PARALLEL:
-            # @TODO confirm that this is IO-bound and no additional
-            #       CPU-usage is possible
-            print("Writing wav file names to file")
-            transcode_list_path = os.path.join(args.save_tmp_data_to,
-                    "transcode-list.txt")
-            with open(transcode_list_path, "w") as outfile:
-                outfile.write("\n".join(files))
-            print("Constructing command")
-            cmd = "cat %s | parallel ffmpeg -y -i {} -ac 1 -vn \
-                    -acodec pcm_s16le -ar 16000 {.}.wav >/dev/null \
-                    2>/dev/null" % (transcode_list_path)
-            print("Uncompressing audio AAC->WAV in parallel...")
-            subprocess.call(cmd, shell=True)
+        if os.path.exists(files[0]):
+            print("Skipping audio conversion of dataset; it "
+                    "appears this has already been done")
         else:
-            print(f"Compiling '{blob_dir_name}' convert cmd list")
-            cmd_list = [f"ffmpeg -y -i {filename} -ac 1 -vn -acodec \
-                          pcm_s16le -ar 16000 {filename.replace('.m4a', '.wav')} \
-                          >/dev/null 2>/dev/null"
-                        for filename in files
-                       ]
+            print(f"Proceeding with audio conversion of dataset")
+            # @note Achieved best transcoding/audio-decompression results
+            #       using GNU parallel, rather than multiple python processes
+            # @note Use GNU Parallel 4.2; version 3 takes 3 times as long
+            # @TODO speed this transcoding / audio compression stuff up more
+            USE_PARALLEL = True
+            if USE_PARALLEL:
+                # @TODO confirm that this is IO-bound and no additional
+                #       CPU-usage is possible
+                print("Writing wav file names to file")
+                transcode_list_path = os.path.join(args.save_tmp_data_to,
+                        "transcode-list.txt")
+                with open(transcode_list_path, "w") as outfile:
+                    outfile.write("\n".join(files))
+                print("Constructing command")
+                cmd = "cat %s | parallel ffmpeg -y -i {} -ac 1 -vn \
+                        -acodec pcm_s16le -ar 16000 {.}.wav >/dev/null \
+                        2>/dev/null" % (transcode_list_path)
+                print("Uncompressing audio AAC->WAV in parallel...")
+                subprocess.call(cmd, shell=True)
+            else:
+                print(f"Compiling '{blob_dir_name}' convert cmd list")
+                cmd_list = [f"ffmpeg -y -i {filename} -ac 1 -vn -acodec \
+                              pcm_s16le -ar 16000 {filename.replace('.m4a', '.wav')} \
+                              >/dev/null 2>/dev/null"
+                            for filename in files
+                           ]
 
-            print(f"Converting '{blob_dir_name}' files from AAC to WAV")
-            pool = Pool(4) # num concurrent threads
-            for i, returncode in tqdm(enumerate(pool.imap(partial(subprocess.call, shell=True), cmd_list))):
-                if returncode != 0:
-                    print("%d command failed: %d" % (i, returncode))
+                print(f"Converting '{blob_dir_name}' files from AAC to WAV")
+                pool = Pool(4) # num concurrent threads
+                for i, returncode in tqdm(enumerate(pool.imap(partial(\
+                        subprocess.call, shell=True), cmd_list))):
+                    if returncode != 0:
+                        print("%d command failed: %d" % (i, returncode))
 
     print(f"...Finished in {time.time() - start} (s)")
 
