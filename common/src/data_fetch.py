@@ -83,7 +83,6 @@ def download_gcs_dataset(args):
 
     # download each blob
     for blob in blobs:
-        NUM_CORES = 8 # hard-coded to prod/cluster machine type
         dst = os.path.join(args.save_tmp_data_to, blob)
         # @TODO get gsutil working in a docker container in order to
         #       perform parallel composite downloads, which apparently

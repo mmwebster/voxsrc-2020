@@ -22,3 +22,9 @@ gsutil \
 
 # copy data locally
 rsync -avm --include='*.wav' -f 'hide,! */' /home/voxceleb/voxceleb2/ ./voxceleb2-wav/
+
+# recursively change dir and file owner/group
+chown -R owner:group ./*
+
+# recursively change dir and file permissions
+chmod -R MODE ./*
