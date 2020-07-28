@@ -226,8 +226,8 @@ def transcode_gcs_dataset(args):
 
                 print(f"Converting '{blob_dir_name}' files from AAC to WAV")
                 pool = Pool(4) # num concurrent threads
-                for i, returncode in tqdm(enumerate(pool.imap(partial(\
-                        subprocess.call, shell=True), cmd_list))):
+                for i, returncode in enumerate(pool.imap(partial(\
+                        subprocess.call, shell=True), cmd_list)):
                     if returncode != 0:
                         print("%d command failed: %d" % (i, returncode))
 
