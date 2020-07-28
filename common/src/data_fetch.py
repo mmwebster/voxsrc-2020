@@ -8,6 +8,8 @@ import os
 from google.cloud import storage
 from google.auth import compute_engine
 
+NUM_CORES_DEFAULT = 4
+
 # @TODO Reorganize this as a "gcs_utils.py" and abstract away any
 #       dataset-specific and non-gcs-specific stuff
 
@@ -42,6 +44,25 @@ def download_blob(bucket_name, src_blob_name, dst_file_name):
     blob.download_to_filename(dst_file_name)
 
     print(f"Blob {src_blob_name} downloaded to {dst_file_name}.")
+
+# @brief Downloads an individual file from a bucket. Uses gsutil for
+#        parallel download (which has issues with credentials on the
+#        cluster). More useful for local downloads. Doesn't require
+#        python GCS SDK
+def download_gcs_blob_in_parallel(src_bucket, src_file_path,
+        dst_dir_path, num_cores=NUM_CORES_DEFAULT):
+    start = time.time()
+    src_url = f"gs://{src_bucket}/{src_file_path}"
+
+    print(f"Downloading blob from {src_url} to directory {dst_dir_path}")
+
+    dst_file_path = os.path.join(dst_dir_path, src_file_path.replace("/","-"))
+    subprocess.call(f"gsutil \
+                        -o 'GSUtil:parallel_thread_count=1' \
+                        -o 'GSUtil:sliced_object_download_max_components={num_cores}' \
+                        cp {src_url} {dst_file_path}", shell=True)
+    print(f"...Finished in {time.time() - start} (s)")
+
 
 # @brief Collection of functions for downloading, extracting, and
 #        transcoding/uncompressing a dataset stored on GCS
@@ -84,8 +105,9 @@ def download_gcs_dataset(args):
 #                         in the .tar.gz)
 def extract_tar(src_tar_path, dst_extract_path):
     start = time.time()
+    dst_data_dir_name = os.path.basename(src_tar_path).replace('.tar.gz','')
     print(f"Extracting tar from {src_tar_path} to \
-            {dst_extract_path}/{src_tar_path.replace('.tar.gz','')}")
+            {os.path.join(dst_extract_path, dst_data_dir_name)}")
 
     with open(os.devnull, 'w') as FNULL:
         subprocess.call(f"tar -C {dst_extract_path} -zxvf {src_tar_path}",
