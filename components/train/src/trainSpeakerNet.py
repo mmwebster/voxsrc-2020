@@ -5,7 +5,7 @@ import sys, os
 
 # Add common src dir to python import path (varies between runs on and
 # off the training cluster)
-sys.path.insert(1, os.getenv('VOX_COMMON_SRC_DIR'))
+sys.path.insert(0, os.getenv('VOX_COMMON_SRC_DIR'))
 
 import time, os, argparse, socket
 import numpy

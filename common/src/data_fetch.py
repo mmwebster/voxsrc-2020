@@ -189,9 +189,10 @@ def transcode_gcs_dataset(args):
         blob_dir_name = args.train_path.split('.tar.gz')[0]
         blob_dir_path = os.path.join(args.save_tmp_data_to, blob_dir_name)
         # get list of all nested files
-        files = glob.glob(f"{blob_dir_path}/*/*/*.m4a")
+        files_to_convert = glob.glob(f"{blob_dir_path}/*/*/*.m4a")
+        converted_files = glob.glob(f"{blob_dir_path}/*/*/*.wav")
 
-        if os.path.exists(files[0]):
+        if len(converted_files) > 0:
             print("Skipping audio conversion of dataset; it "
                     "appears this has already been done")
         else:
@@ -208,7 +209,7 @@ def transcode_gcs_dataset(args):
                 transcode_list_path = os.path.join(args.save_tmp_data_to,
                         "transcode-list.txt")
                 with open(transcode_list_path, "w") as outfile:
-                    outfile.write("\n".join(files))
+                    outfile.write("\n".join(files_to_convert))
                 print("Constructing command")
                 cmd = "cat %s | parallel ffmpeg -y -i {} -ac 1 -vn \
                         -acodec pcm_s16le -ar 16000 {.}.wav >/dev/null \
@@ -220,7 +221,7 @@ def transcode_gcs_dataset(args):
                 cmd_list = [f"ffmpeg -y -i {filename} -ac 1 -vn -acodec \
                               pcm_s16le -ar 16000 {filename.replace('.m4a', '.wav')} \
                               >/dev/null 2>/dev/null"
-                            for filename in files
+                            for filename in files_to_convert
                            ]
 
                 print(f"Converting '{blob_dir_name}' files from AAC to WAV")

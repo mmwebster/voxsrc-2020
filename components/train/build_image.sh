@@ -8,10 +8,11 @@ mkdir -p ./build/
 # copy in component-specific source
 cp -r ./src ./build/src
 # copy in common source code
-cp -r ../../common/src ./build/common-src/
+cp -r ../../common/src ./build/src/common
 
 # move into container's dir
 cd "$(dirname "$0")"
+
 # build it
 docker build -t "${full_image_name}" .
 # upload it
