@@ -5,3 +5,4 @@ data/tars
 *.tar.gz
 __pycache__
 wandb
+build

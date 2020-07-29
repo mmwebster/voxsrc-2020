@@ -1,3 +1,6 @@
+Kubeflow Front-end hosted at: ${KF_NAME}.endpoints.${PROJECT}.cloud.goog
+    -> e.g. https://kf-train-6.endpoints.voxsrc-2020-dev-1.cloud.goog
+
 ##############################
 # GCP commands
 ##############################
