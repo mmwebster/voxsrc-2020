@@ -1,19 +1,39 @@
 #!/usr/bin/python3
+
+import sys
+
+# Add common src dir to python import path (varies between runs on and
+# off the training cluster)
+sys.path.insert(1, "../common/src/")
+
 from shutil import copyfile
 import os
 from tqdm import tqdm
 import argparse
 import subprocess
-import sys
+
+from data_fetch import download_gcs_blob_in_parallel, extract_tar, \
+                     convert_aac_to_wav
 
 # Usage example:
 #   python utils.py --action copy_train
 
 parser = argparse.ArgumentParser(description='Voxceleb Dataset Utils')
 
-# actions and their params
+# copy a subset of the training data
 parser.add_argument('--copy-train', action='store_true')
+
+# copy a subset of the testing data
 parser.add_argument('--copy-test', action='store_true')
+
+# download, extract, and transcode data from GCS for outside of the
+# cluster
+parser.add_argument('--install-local-dataset', action='store_true')
+parser.add_argument('--src-bucket', required=('--install-local-dataset' in sys.argv))
+parser.add_argument('--src-dataset', required=('--install-local-dataset' in sys.argv))
+parser.add_argument('--dst-data-path', required=('--install-local-dataset' in sys.argv))
+parser.add_argument('--dst-list-path', required=('--install-local-dataset' in sys.argv))
+parser.add_argument('--dst-tmp-path', default="./")
 
 # compress a dataset
 parser.add_argument('--compress', action='store_true', help="requires --dir=[path to directory to compress]")
@@ -114,6 +134,51 @@ elif args.compress:
     dst_file = os.path.join(args.dst_dir, dataset_name + ".tar.gz")
     print(f"Destination file: {dst_file}")
     subprocess.call(f"tar -zcvf {dst_file} {args.src_dir}", shell=True)
+
+# @example
+#
+#     python utils.py --install-local-dataset --src-bucket \
+#        voxsrc-2020-voxceleb-v4 --src-dataset no_cuda --dst-data-path \
+#        ./datasets --dst-list-path ./lists --dst-tmp-path ./tmp
+#
+# @note Current datasets: no_cuda, full
+elif args.install_local_dataset:
+    print(f"Installing local dataset")
+
+    # create directories if not present
+    for path in [args.dst_data_path, args.dst_list_path, \
+            args.dst_tmp_path]:
+        if not(os.path.exists(path)):
+            print(f"Creating directory: {path}")
+            os.makedirs(path)
+
+    # download all list blobs to the list folder
+    for blob in [f"vox2_{args.src_dataset}.txt",
+                 f"vox1_{args.src_dataset}.txt"]:
+        download_gcs_blob_in_parallel(args.src_bucket, blob,
+                args.dst_list_path)
+
+    # download all archived data blobs to the tmp dir and then
+    # unarchive them into the data dir
+    for blob in [f"vox2_{args.src_dataset}.tar.gz",
+                 f"vox1_{args.src_dataset}.tar.gz"]:
+        download_gcs_blob_in_parallel(args.src_bucket, blob,
+                args.dst_tmp_path)
+        extract_tar(os.path.join(args.dst_tmp_path, blob),
+                args.dst_data_path)
+
+    # convert compressed training audio data from AAC(.m4a) to WAV(.wav)
+    aac_train_data_path = os.path.join(args.dst_data_path,
+            f"vox2_{args.src_dataset}/")
+    convert_aac_to_wav(aac_train_data_path, args.dst_tmp_path)
+
+    print("************  NOTICE ME  ************\n"
+           "-> You must now symlink these paths with (for example):\n"
+           "   ln -s ./datasets/vox1_no_cuda ../components/train/tmp/data/vox1_no_cuda\n"
+           "   ln -s ./datasets/vox2_no_cuda ../components/train/tmp/data/vox2_no_cuda\n"
+           "   ln -s ./datasets/vox1_no_cuda.txt ../components/train/tmp/data/vox1_no_cuda.txt\n"
+           "   ln -s ./datasets/vox2_no_cuda.txt ../components/train/tmp/data/vox2_no_cuda.txt\n")
+
 
 else:
     print(f"Invalid 'action' param: {args.action}")

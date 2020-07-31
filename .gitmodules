@@ -1,6 +1,0 @@
-[submodule "voxceleb_trainer"]
-	path = voxceleb_trainer
-	url = git@github.com:mmwebster/voxceleb_trainer.git
-[submodule "components/train/src/voxceleb_trainer"]
-	path = components/train/src/voxceleb_trainer
-	url = git@github.com:mmwebster/voxceleb_trainer.git

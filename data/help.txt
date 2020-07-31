@@ -1,0 +1,30 @@
+# make a bucket
+gsutil mb gs://voxsrc-2020-voxceleb-v5
+
+# copy dataset dir to bucket (in parallel)
+gsutil -m cp -r [dir] gs://voxsrc-2020-voxceleb2-v1
+
+# copy file to bucket
+gsutil cp [file] gs://voxsrc-2020-voxceleb-v4
+
+# copy LARGE file to bucket
+gsutil -o GSUtil:parallel_composite_upload_threshold=150M cp [file] gs://voxsrc-2020-voxceleb-v4
+
+# remove file from bucket
+gsutil rm gs://voxsrc-2020-voxceleb-v4/[file]
+
+# download LARGE file from bucket (NOTE params)
+# used the configuration suggested by this article: https://medium.com/@duhroach/gcs-read-performance-of-large-files-bd53cfca4410
+gsutil \
+  -o 'GSUtil:parallel_thread_count=1' \
+  -o 'GSUtil:sliced_object_download_max_components=[NUM CORES]' \
+  cp gs://voxsrc-2020-voxceleb-v4/[source filename] [destination filename]
+
+# copy data locally
+rsync -avm --include='*.wav' -f 'hide,! */' /home/voxceleb/voxceleb2/ ./voxceleb2-wav/
+
+# recursively change dir and file owner/group
+chown -R owner:group ./*
+
+# recursively change dir and file permissions
+chmod -R MODE ./*

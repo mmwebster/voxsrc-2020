@@ -5,7 +5,6 @@ data/tars
 *.tar.gz
 __pycache__
 .DS_Store
-components/.DS_Store
-components/augmention/.DS_Store
-components/augmention/.ipynb_checkpoints/data_augmentation_audio-checkpoint.ipynb
-data/.DS_Store
+.ipynb_checkpoints
+wandb
+build
