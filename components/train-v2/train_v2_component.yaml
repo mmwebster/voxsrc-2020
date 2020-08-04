@@ -1,0 +1,33 @@
+name: PyTorch Trainer v2 Component
+description: Train a pytorch model
+inputs:
+  - {name: data_bucket, type: String}
+  - {name: test_list, type: String}
+  - {name: train_list, type: String}
+  - {name: test_path, type: String}
+  - {name: train_path, type: String}
+  - {name: batch_size, type: Integer}
+  - {name: max_epoch, type: Integer}
+  - {name: checkpoint_bucket, type: String}
+  - {name: run_id, type: String}
+  - {name: n_speakers, type: Integer}
+outputs:
+- {name: trained_model, type: GCSPath}
+implementation:
+  container:
+    image: gcr.io/voxsrc-2020-dev-1/trainer-v2:latest
+    command: [
+      python3, /src/trainSpeakerNet.py,
+      --data-bucket, {inputValue: data_bucket},
+      --test_list, {inputValue: test_list},
+      --train_list, {inputValue: train_list},
+      --test_path, {inputValue: test_path},
+      --train_path, {inputValue: train_path},
+      --batch_size, {inputValue: batch_size},
+      --max_epoch, {inputValue: max_epoch},
+      --checkpoint-bucket, {inputValue: checkpoint_bucket},
+      --run-id, {inputValue: run_id},
+      --nSpeakers, {inputValue: n_speakers},
+
+      --save-model-to, {outputPath: trained_model},
+    ]
