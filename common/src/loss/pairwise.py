@@ -1,12 +1,16 @@
 #! /usr/bin/python
 # -*- encoding: utf-8 -*-
 
+import sys
+
+sys.path.insert(0, "../")
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import time, pdb, numpy
-from accuracy import accuracy
-from tuneThreshold import tuneThresholdfromScore
+from baseline_misc.accuracy import accuracy
+from baseline_misc.tuneThreshold import tuneThresholdfromScore
 import random
 
 class PairwiseLoss(nn.Module):

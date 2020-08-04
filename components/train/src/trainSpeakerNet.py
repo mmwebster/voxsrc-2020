@@ -12,7 +12,7 @@ import numpy
 import pdb
 import torch
 import glob
-from tuneThreshold import tuneThresholdfromScore
+from baseline_misc.tuneThreshold import tuneThresholdfromScore
 from SpeakerNet import SpeakerNet
 from DatasetLoader import DatasetLoader
 import subprocess

@@ -3,11 +3,15 @@
 ## Fast re-implementation of the GE2E loss (https://arxiv.org/abs/1710.10467) 
 ## Numerically checked against https://github.com/cvqluu/GE2E-Loss
 
+import sys
+
+sys.path.insert(0, "../")
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import time, pdb, numpy
-from accuracy import accuracy
+from baseline_misc.accuracy import accuracy
 
 class GE2ELoss(nn.Module):
 

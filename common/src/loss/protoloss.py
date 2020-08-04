@@ -3,11 +3,15 @@
 ## Re-implementation of prototypical networks (https://arxiv.org/abs/1703.05175).
 ## Numerically checked against https://github.com/cyvius96/prototypical-network-pytorch
 
+import sys
+
+sys.path.insert(0, "../")
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import time, pdb, numpy
-from accuracy import accuracy
+from baseline_misc.accuracy import accuracy
 
 class ProtoLoss(nn.Module):
 

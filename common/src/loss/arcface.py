@@ -2,11 +2,15 @@
 # -*- encoding: utf-8 -*-
 # Adapted from https://github.com/wujiyang/Face_Pytorch (Apache License)
 
+import sys
+
+sys.path.insert(0, "../")
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import time, pdb, numpy, math
-from accuracy import accuracy
+from baseline_misc.accuracy import accuracy
 
 class AAMSoftmax(nn.Module):
     def __init__(self,
