@@ -15,35 +15,42 @@ from queue import Queue
 def round_down(num, divisor):
     return num - (num%divisor)
 
+# @brief read WAV file and convert to torch tensor
+# @credit clovaai/voxceleb_trainer
 def loadWAV(filename, max_frames, evalmode=True, num_eval=10):
 
-    # Maximum audio length
-    max_audio = max_frames * 160 + 240
+    # desired length of audio segment
+    desired_audio_length = max_frames * 160 + 240
 
     # Read wav file and convert to torch tensor
     sample_rate, audio  = wavfile.read(filename)
 
-    audiosize = audio.shape[0]
+    # actual length of audio segment
+    actual_audio_length = audio.shape[0]
 
-    if audiosize <= max_audio:
-        shortage    = math.floor( ( max_audio - audiosize + 1 ) / 2 )
+    # zero-pad audio segment if it's smaller than desired
+    if actual_audio_length <= desired_audio_length:
+        shortage    = math.floor( ( desired_audio_length - actual_audio_length + 1 ) / 2 )
         audio       = numpy.pad(audio, (shortage, shortage), 'constant', constant_values=0)
-        audiosize   = audio.shape[0]
+        actual_audio_length   = audio.shape[0]
 
+    # set deterministic or random initial frame based on eval/not eval
     if evalmode:
-        startframe = numpy.linspace(0,audiosize-max_audio,num=num_eval)
+        startframe = numpy.linspace(0,actual_audio_length-desired_audio_length,num=num_eval)
     else:
-        startframe = numpy.array([numpy.int64(random.random()*(audiosize-max_audio))])
-    
+        startframe = numpy.array([numpy.int64(random.random()*(actual_audio_length-desired_audio_length))])
+
+    # grab 'desired_audio_length'-long subset of audio segment
     feats = []
     if evalmode and max_frames == 0:
         feats.append(audio)
     else:
+        # @TODO Why is startframe an array? Currently iterating through 1 element...
         for asf in startframe:
-            feats.append(audio[int(asf):int(asf)+max_audio])
+            feats.append(audio[int(asf):int(asf)+desired_audio_length])
 
+    # load into torch float tensor
     feat = numpy.stack(feats,axis=0)
-
     feat = torch.FloatTensor(feat)
 
     return feat;
