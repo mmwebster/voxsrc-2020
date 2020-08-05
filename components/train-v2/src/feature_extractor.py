@@ -26,6 +26,9 @@ import pwd
 import google
 import wandb
 
+# @TODO Strip this file of all training related stuff, not needed for a pure
+#       feature extractor
+
 # @brief Generate a unique run ID when not run in kubeflow (kubeflow passes
 #        its own default run ID) in order to store training artifacts
 #        for resume after preemption
@@ -36,7 +39,7 @@ def gen_run_id():
     wandb_id = wandb.util.generate_id()
     return f"{user_id}-{wandb_id}"
 
-parser = argparse.ArgumentParser(description = "SpeakerNet");
+parser = argparse.ArgumentParser(description = "Feature Extractor");
 
 ## New args to support running on kubernetes/kubeflow
 # @note "tmp" denotes that this output data will not be captured by
@@ -108,13 +111,6 @@ parser.add_argument('--nOut', type=int,         default=512,    help='Embedding 
 
 args = parser.parse_args();
 
-# touch wandb tmp dir
-print(f"Creating directory {args.save_tmp_wandb_to}")
-Path(args.save_tmp_wandb_to).mkdir(parents=True, exist_ok=True)
-
-wandb.init(project="voxsrc-2020-v1", config=args, id=args.run_id,
-        resume="allow", dir=args.save_tmp_wandb_to)
-
 train_list, test_list, train_path, test_path = [None, None, None, None]
 
 ## Fetch data from GCS if enabled
@@ -160,9 +156,6 @@ cuda_avail = torch.cuda.is_available()
 device = torch.device("cuda" if cuda_avail else "cpu")
 print(f"Cuda available: {cuda_avail}")
 
-## Load models
-s = SpeakerNet(device, **vars(args));
-
 it          = 1;
 prevloss    = float("inf");
 sumloss     = 0;
@@ -176,69 +169,6 @@ metadata_file_dst_path = os.path.join(args.save_tmp_model_to, METADATA_NAME)
 default_metadata = {'is_done': False}
 metadata = default_metadata
 
-if args.reset_training:
-    print("Starting at epoch 0, regardless of previous training progress")
-else:
-    # fetch metadata if available
-    try:
-        download_blob(args.checkpoint_bucket, metadata_gcs_src_path,
-                metadata_file_dst_path)
-        print("Downloaded previous training metadata")
-        with open(metadata_file_dst_path, 'r') as f:
-            try:
-                metadata = yaml.safe_load(f)
-                print(f"Loaded previous training metadata: {metadata}")
-                # grab the latest model name (corresponding to the last epoch)
-                latest_model_name = metadata['latest_model_name']
-                # download the model
-                model_gcs_src_path = os.path.join(args.run_id, latest_model_name)
-                model_file_dst_path = os.path.join(args.save_tmp_model_to, latest_model_name)
-                try:
-                    download_blob(args.checkpoint_bucket, model_gcs_src_path,
-                            model_file_dst_path)
-                    print("**Downloaded a saved model**")
-                    # load the saved model's params into the model class
-                    s.loadParameters(model_file_dst_path);
-                    print("Model %s loaded from previous state!"%model_file_dst_path);
-                    it = int(os.path.splitext(os.path.basename(model_file_dst_path))[0][5:]) + 1
-                except google.cloud.exceptions.NotFound:
-                    print("**No saved model found**")
-            except yaml.YAMLError as exc:
-                print(exc)
-                metadata = default_metadata
-    except google.cloud.exceptions.NotFound:
-        print("**No previous training metadata found**")
-
-    # exit if previous training run finished
-    if 'is_done' in metadata and metadata['is_done']:
-        print("Terminating... training for this run has already completed")
-        quit()
-
-if(args.initial_model != ""):
-    raise "Error: TODO"
-    s.loadParameters(args.initial_model);
-    print("Model %s loaded!"%args.initial_model);
-
-for ii in range(0,it-1):
-    if ii % args.test_interval == 0:
-        clr = s.updateLearningRate(args.lr_decay) 
-
-## Evaluation code
-if args.eval == True:
-    sc, lab = s.evaluateFromListSave(test_list, print_interval=100, feat_dir=args.save_tmp_feats_to, test_path=test_path)
-    result = tuneThresholdfromScore(sc, lab, [1, 0.1]);
-    print('EER %2.4f'%result[1])
-
-    quit();
-
-## Write args to scorefile
-scorefile = open(os.path.join(args.save_tmp_results_to,"scores.txt"), "a+");
-
-for items in vars(args):
-    print(items, vars(args)[items]);
-    scorefile.write('%s %s\n'%(items, vars(args)[items]));
-scorefile.flush()
-
 ## Assertion
 gsize_dict  = {'proto':args.nSpeakers, 'triplet':2, 'contrastive':2, 'softmax':1, 'amsoftmax':1, 'aamsoftmax':1, 'ge2e':args.nSpeakers, 'angleproto':args.nSpeakers}
 
@@ -250,111 +180,19 @@ trainLoader = DatasetLoader(train_list,
         gSize=gsize_dict[args.trainfunc], new_train_path=train_path,
         **vars(args));
 
-clr = s.updateLearningRate(1)
-
 # touch the output file/dir
 print(f"Creating parent dir for path={args.save_tmp_model_to}")
 Path(args.save_tmp_model_to).parent.mkdir(parents=True, exist_ok=True)
 
-wandb_log = {'epoch': 0, 'loss': 0, 'train_EER': 0, 'lr': 0, 'val_EER': 0}
+torchfb = torchaudio.transforms.MelSpectrogram(sample_rate=16000, n_fft=512,
+        win_length=400, hop_length=160, f_min=0.0, f_max=8000, pad=0, n_mels=40)
 
-while(1):
-    print(time.strftime("%Y-%m-%d %H:%M:%S"), it, "Training %s with LR %f..."%(args.model,max(clr)));
+for data, data_label in trainLoader:
 
-    ## Train network
-    loss, traineer = s.train_network(loader=trainLoader);
+    tstart = time.time()
 
-    wandb_log.update({'epoch': it, 'loss': loss, 'train_EER': traineer})
-
-    ## Validate, save, update learning rate
-    if it % args.test_interval == 0:
-        print(time.strftime("%Y-%m-%d %H:%M:%S"), it, "Evaluating...");
-
-        sc, lab = s.evaluateFromListSave(test_list, print_interval=100,
-                feat_dir=args.save_tmp_feats_to, test_path=test_path)
-        result = tuneThresholdfromScore(sc, lab, [1, 0.1]);
-
-        print(time.strftime("%Y-%m-%d %H:%M:%S"), "LR %f, TEER/T1 %2.2f, TLOSS %f, VEER %2.4f"%( max(clr), traineer, loss, result[1]));
-        scorefile.write("IT %d, LR %f, TEER/T1 %2.2f, TLOSS %f, VEER %2.4f\n"%(it, max(clr), traineer, loss, result[1]));
-
-        scorefile.flush()
-
-        clr = s.updateLearningRate(args.lr_decay) 
-
-
-        ## touch the output file/dir
-        #Path(args.save_tmp_model_to).parent.mkdir(parents=True, exist_ok=True)
-        #with open(args.save_tmp_model_to, 'w') as eerfile:
-        #    eerfile.write(f"model iter: {it}")
-        #    eerfile.write('%.4f'%result[1])
-
-        eerfile = open(args.save_tmp_model_to+"/model%09d.eer"%it, 'w')
-        eerfile.write('%.4f'%result[1])
-        eerfile.close()
-        ret = '%.4f'%result[1]
-
-        wandb_log.update({'lr': clr, 'val_EER': result[1]})
-
-    else:
-
-        print(time.strftime("%Y-%m-%d %H:%M:%S"), "LR %f, TEER %2.2f, TLOSS %f"%( max(clr), traineer, loss));
-        scorestuff = "IT %d, LR %f, TEER %2.2f, TLOSS %f\n"%(it, max(clr), traineer, loss)
-        scorefile.write(scorestuff);
-        # write contents
-        with open(args.save_model_to, 'w') as model_save_file:
-            model_save_file.write(f"[model] ret={scorestuff}\n")
-
-        scorefile.flush()
-
-    wandb.log(wandb_log)
-
-    # save model file for this epoch
-    model_name = "model%09d.model"%it
-    model_filename = os.path.join(args.save_tmp_model_to, model_name)
-    s.saveParameters(model_filename);
-    # update metadata
-    metadata['latest_model_name'] = model_name
-    metadata['num_epochs'] = it
-    # dump metadata to yaml file
-    with open(metadata_file_dst_path, 'w') as f:
-        try:
-            yaml.dump(metadata, f)
-            print("Saved current training metadata")
-        except yaml.YAMLError as exc:
-            print(exc)
-    # upload model to GCS
-    model_gcs_dst_path = os.path.join(args.run_id, model_name)
-    model_file_src_path = os.path.join(args.save_tmp_model_to, model_name)
-    upload_blob(args.checkpoint_bucket, model_gcs_dst_path,
-            model_file_src_path)
-    # upload metadata to GCS
-    metadata_gcs_dst_path = metadata_gcs_src_path
-    metadata_file_src_path = metadata_file_dst_path
-    upload_blob(args.checkpoint_bucket, metadata_gcs_dst_path,
-            metadata_file_src_path)
-
-    if it >= args.max_epoch:
-        break
-
-    it+=1;
-    print("");
-
-scorefile.close();
-
-
-# save "done" to metadata so it restarts on retry
-metadata['is_done'] = True
-
-# dump metadata to yaml file
-with open(metadata_file_dst_path, 'w') as f:
-    try:
-        yaml.dump(metadata, f)
-        print("Saved current training metadata")
-    except yaml.YAMLError as exc:
-        print(exc)
-
-# upload metadata to GCS
-metadata_gcs_dst_path = metadata_gcs_src_path
-metadata_file_src_path = metadata_file_dst_path
-upload_blob(args.checkpoint_bucket, metadata_gcs_dst_path,
-        metadata_file_src_path)
+    feat = []
+    for inp in data:
+        mel_filter_bank = torchfb(inp.to(device))+1e-6
+        # TODO: is inp a sample, and data a batch?
+    # TODO: save these to file now

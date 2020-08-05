@@ -1,5 +1,5 @@
 #!/bin/bash -e
-image_name=gcr.io/voxsrc-2020-dev-1/trainer-v2
+image_name=gcr.io/voxsrc-2020-dev-1/feature-extractor
 image_tag=latest
 full_image_name=${image_name}:${image_tag}
 
