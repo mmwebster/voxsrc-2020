@@ -210,9 +210,6 @@ train_name = args.train_path.replace(".tar.gz", "")
 # @note the speakers at each index within a batch for a single set of batches
 #       are teh same. This is why batch_labels is lower-dim than batches
 for batches, batch_labels, batches_paths in trainLoader:
-
-    print(f"shape of batches is {len(batches)}")
-
     feat = []
     ## print some spectrograms
     #for batch in batches:

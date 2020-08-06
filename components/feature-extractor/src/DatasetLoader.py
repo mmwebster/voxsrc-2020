@@ -167,11 +167,11 @@ class DatasetLoader(object):
         mixmap          = []
 
         ## Prevent two pairs of the same speaker in the same batch
+        # @TODO This code is now a trivial pass through. Remove it
         for ii in mixid:
             startbatch = len(mixlabel) - len(mixlabel) % self.batch_size
-            if flattened_label[ii] not in mixlabel[startbatch:]:
-                mixlabel.append(flattened_label[ii])
-                mixmap.append(ii)
+            mixlabel.append(flattened_label[ii])
+            mixmap.append(ii)
 
         # contains 'nSpeakers' tuples of each speaker's utterances, multiples
         # tuples per speaker. Not sure how this is, when the code above "prevents
