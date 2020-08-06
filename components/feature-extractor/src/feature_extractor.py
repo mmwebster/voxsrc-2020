@@ -116,8 +116,6 @@ parser.add_argument('--nOut', type=int,         default=512,    help='Embedding 
 
 args = parser.parse_args();
 
-train_list, test_list, train_path, test_path = [None, None, None, None]
-
 # set random seeds
 # @TODO any reason to use BOTH 'random' and 'numpy.random'?
 if args.set_seed:
@@ -126,6 +124,8 @@ if args.set_seed:
     numpy.random.seed(0)
     torch.manual_seed(0)
     torch.cuda.manual_seed(0)
+
+train_list, test_list, train_path, test_path = [None, None, None, None]
 
 ## Fetch data from GCS if enabled
 if args.data_bucket is not None and not args.skip_data_fetch:
@@ -202,6 +202,10 @@ torchfb = torchaudio.transforms.MelSpectrogram(sample_rate=16000, n_fft=512,
 count = 0
 start_time = time.time()
 
+# grab names of test and train from paths
+test_name = args.test_path.replace(".tar.gz", "")
+train_name = args.train_path.replace(".tar.gz", "")
+
 # iterate through sets of batches, as provided by data load workers
 # @note the speakers at each index within a batch for a single set of batches
 #       are teh same. This is why batch_labels is lower-dim than batches
@@ -229,13 +233,16 @@ for batches, batch_labels, batches_paths in trainLoader:
         mel_filter_bank = torchfb(batch.to(device))+1e-6
         log_mel_filter_bank = mel_filter_bank.cpu().log()
         for sample_index, sample in enumerate(log_mel_filter_bank):
-            # set filename for spectrogram and create path
+            # grab original WAV filename
             wav_file_name = batches_paths[batch_index][sample_index]
-            spectrogram_file_name = wav_file_name.replace(".wav", "")
-            spectrogram_full_path = f"/mnt/c/wsl-shared/voxsrc-2020/{spectrogram_file_name}"
-            Path(os.path.dirname(spectrogram_full_path)).mkdir(parents=True,
+            # remove the ".wav" and add a _feats_[run id] to the name of the dataset
+            spectrogram_file_name = wav_file_name\
+                    .replace(".wav", "")\
+                    .replace(train_name, f"{train_name}_feats_{args.run_id}")
+            # ensure path to file exists
+            Path(os.path.dirname(spectrogram_file_name)).mkdir(parents=True,
                     exist_ok=True)
             # save the spectrogram data to file
-            numpy.save(spectrogram_full_path, sample.numpy())
+            numpy.save(spectrogram_file_name, sample.numpy())
 
 print(f"Finished in {time.time() - start_time} seconds")
