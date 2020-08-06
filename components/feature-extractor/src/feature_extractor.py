@@ -8,12 +8,13 @@ import sys, os
 sys.path.insert(0, os.getenv('VOX_COMMON_SRC_DIR'))
 
 import time, os, argparse, socket
+import random
 import numpy
 import pdb
 import torch
+import torchaudio
 import glob
 from baseline_misc.tuneThreshold import tuneThresholdfromScore
-from SpeakerNet import SpeakerNet
 from DatasetLoader import DatasetLoader
 import subprocess
 import time
@@ -25,6 +26,7 @@ import yaml
 import pwd
 import google
 import wandb
+import matplotlib.pyplot as plt
 
 # @TODO Strip this file of all training related stuff, not needed for a pure
 #       feature extractor
@@ -57,6 +59,9 @@ parser.add_argument('--save-tmp-model-to', type=str, default="./tmp/model/");
 parser.add_argument('--save-tmp-results-to', type=str, default="./tmp/results/");
 parser.add_argument('--save-tmp-feats-to', type=str, default="./tmp/feats/");
 parser.add_argument('--save-tmp-wandb-to', type=str, default="./tmp/");
+
+parser.add_argument('--no-cuda', action='store_true');
+parser.add_argument('--set-seed', action='store_true');
 
 parser.add_argument('--checkpoint-bucket', type=str,
         default="voxsrc-2020-checkpoints-dev");
@@ -113,6 +118,15 @@ args = parser.parse_args();
 
 train_list, test_list, train_path, test_path = [None, None, None, None]
 
+# set random seeds
+# @TODO any reason to use BOTH 'random' and 'numpy.random'?
+if args.set_seed:
+    print("Using fixed random seed")
+    random.seed(0)
+    numpy.random.seed(0)
+    torch.manual_seed(0)
+    torch.cuda.manual_seed(0)
+
 ## Fetch data from GCS if enabled
 if args.data_bucket is not None and not args.skip_data_fetch:
     print("Installing dataset from GCS")
@@ -151,10 +165,12 @@ for d in (tmp_output_dirs + output_dirs):
     if not(os.path.exists(d)):
         os.makedirs(d)
 
-# set device cuda or cpu
+# set torch device to cuda or cpu
 cuda_avail = torch.cuda.is_available()
-device = torch.device("cuda" if cuda_avail else "cpu")
 print(f"Cuda available: {cuda_avail}")
+use_cuda = cuda_avail and not args.no_cuda
+print(f"Using cuda: {use_cuda}")
+device = torch.device("cuda" if use_cuda else "cpu")
 
 it          = 1;
 prevloss    = float("inf");
@@ -180,19 +196,46 @@ trainLoader = DatasetLoader(train_list,
         gSize=gsize_dict[args.trainfunc], new_train_path=train_path,
         **vars(args));
 
-# touch the output file/dir
-print(f"Creating parent dir for path={args.save_tmp_model_to}")
-Path(args.save_tmp_model_to).parent.mkdir(parents=True, exist_ok=True)
-
 torchfb = torchaudio.transforms.MelSpectrogram(sample_rate=16000, n_fft=512,
         win_length=400, hop_length=160, f_min=0.0, f_max=8000, pad=0, n_mels=40)
 
-for data, data_label in trainLoader:
+count = 0
+start_time = time.time()
 
-    tstart = time.time()
+# iterate through sets of batches, as provided by data load workers
+# @note the speakers at each index within a batch for a single set of batches
+#       are teh same. This is why batch_labels is lower-dim than batches
+for batches, batch_labels, batches_paths in trainLoader:
+
+    print(f"shape of batches is {len(batches)}")
 
     feat = []
-    for inp in data:
-        mel_filter_bank = torchfb(inp.to(device))+1e-6
-        # TODO: is inp a sample, and data a batch?
-    # TODO: save these to file now
+    ## print some spectrograms
+    #for batch in batches:
+    #    mel_filter_bank = torchfb(batch.to(device))+1e-6
+    #    plt.figure()
+    #    #plt.imsave(f"/mnt/c/wsl-shared/voxsrc-2020/spec-{count}.png", mel_filter_bank.log()[0,:,:].numpy(), cmap='gray')
+    #    print(f"Current labels: {batch_labels}")
+    #    plt.imsave(f"/mnt/c/wsl-shared/voxsrc-2020/spec-1.png", mel_filter_bank.log()[0,:,:].numpy(), cmap='gray')
+    #    plt.figure()
+    #    plt.plot(batch[0,:].numpy())
+    #    plt.savefig(f"/mnt/c/wsl-shared/voxsrc-2020/vis-1.png")
+    #    count += 1
+    #    break
+    #break
+
+    # iterate through batches in the current loaded set
+    for batch_index, batch in enumerate(batches):
+        mel_filter_bank = torchfb(batch.to(device))+1e-6
+        log_mel_filter_bank = mel_filter_bank.cpu().log()
+        for sample_index, sample in enumerate(log_mel_filter_bank):
+            # set filename for spectrogram and create path
+            wav_file_name = batches_paths[batch_index][sample_index]
+            spectrogram_file_name = wav_file_name.replace(".wav", "")
+            spectrogram_full_path = f"/mnt/c/wsl-shared/voxsrc-2020/{spectrogram_file_name}"
+            Path(os.path.dirname(spectrogram_full_path)).mkdir(parents=True,
+                    exist_ok=True)
+            # save the spectrogram data to file
+            numpy.save(spectrogram_full_path, sample.numpy())
+
+print(f"Finished in {time.time() - start_time} seconds")

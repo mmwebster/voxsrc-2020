@@ -104,17 +104,28 @@ class DatasetLoader(object):
                 continue;
 
             in_data = [];
+            multi_batch_paths = []
+            # iterate through the 2nd dim of self.data_list, setting 'ii' to be
+            # a position within a tuple
             for ii in range(0,self.gSize):
+                batch_paths = []
                 feat = []
+                # iterate through the 1st dim of self.data_list, setting ij to
+                # be a tuple index from "index" to "index + self.batch_size"
                 for ij in range(index,index+self.batch_size):
-                    # @note if there aren't enough independent
-                    #       speakers, the batch won't be fillable
-                    feat.append(loadWAV(self.data_list[ij][ii], self.max_frames, evalmode=False));
+                    # @warning if there aren't enough unique speakers, the batch
+                    #          won't be fillable
+                    # append a single utterance to the batch's features
+                    feat.append(loadWAV(self.data_list[ij][ii], self.max_frames,
+                        evalmode=False));
+                    batch_paths.append(self.data_list[ij][ii])
+                # append the batch containing unique speakers
                 in_data.append(torch.cat(feat, dim=0));
+                multi_batch_paths.append(batch_paths)
 
             in_label = numpy.asarray(self.data_label[index:index+self.batch_size]);
-            
-            self.datasetQueue.put([in_data, in_label]);
+
+            self.datasetQueue.put([in_data, in_label, multi_batch_paths]);
 
             index += self.batch_size*self.nWorkers;
 
@@ -130,14 +141,20 @@ class DatasetLoader(object):
 
         lol = lambda lst, sz: [lst[i:i+sz] for i in range(0, len(lst), sz)]
 
+        # contains list of speakers, each containing a list of file paths to
+        # their utterances
         flattened_list = []
+        # contains list of training labels (integer speaker IDs) where the index
+        # corresponds to the respective place in the flattened_list (if it were
+        # truly flattened, instead of a list of lists)
         flattened_label = []
 
         ## Data for each class
         for findex, key in enumerate(dictkeys):
+            # key is speaker ID
             data    = self.data_dict[key]
             numSeg  = round_down(min(len(data),self.max_seg_per_spk),self.gSize)
-            
+
             rp      = lol(numpy.random.permutation(len(data))[:numSeg],self.gSize)
             flattened_label.extend([findex] * (len(rp)))
             for indices in rp:
@@ -146,6 +163,7 @@ class DatasetLoader(object):
         ## Data in random order
         mixid           = numpy.random.permutation(len(flattened_label))
         mixlabel        = []
+        # contains utterance indices that will be used (after multi pair removal)
         mixmap          = []
 
         ## Prevent two pairs of the same speaker in the same batch
@@ -155,9 +173,14 @@ class DatasetLoader(object):
                 mixlabel.append(flattened_label[ii])
                 mixmap.append(ii)
 
+        # contains 'nSpeakers' tuples of each speaker's utterances, multiples
+        # tuples per speaker. Not sure how this is, when the code above "prevents
+        # two pairs of the same speaker in the same batch"
         self.data_list  = [flattened_list[i] for i in mixmap]
+        # contains integer speaker ID label for the respective tuple in
+        # self.data_list
         self.data_label = [flattened_label[i] for i in mixmap]
-        
+
         ## Iteration size
         self.nFiles = len(self.data_label);
 
@@ -169,23 +192,29 @@ class DatasetLoader(object):
         return self;
 
 
+    # @TODO refactor
     def __next__(self):
 
         while(True):
             isFinished = True;
-            
+
+            # return the first element in the datasetQueue if non-empty
             if(self.datasetQueue.empty() == False):
                 return self.datasetQueue.get();
+
+            # set isFinished = False if any data loaders are still alive
             for index in range(0, self.nWorkers):
                 if(self.dataLoaders[index].is_alive() == True):
                     isFinished = False;
                     break;
 
+            # if isFinished == False, give workers time to work, and skip to the
+            # next iteration
             if(isFinished == False):
                 time.sleep(1.0);
                 continue;
 
-
+            # if isFinished == True, join against all workers and cleanup
             for index in range(0, self.nWorkers):
                 self.dataLoaders[index].join();
 
