@@ -10,6 +10,7 @@
 #                   ID. This automatically happens when kubeflow runs
 #                   are preempted, but must be manually passed for runs
 #                   outside of kubeflow.
+# @param --set-seed For deterministic, reproducible tests
 # @note Flags for the "small" dataset:
 #         --test_list=vox1_test_list_small.txt \
 #         --train_list=vox2_train_list_small.txt \

@@ -11,6 +11,7 @@ import time, os, argparse, socket
 import numpy
 import pdb
 import torch
+import random
 import glob
 from baseline_misc.tuneThreshold import tuneThresholdfromScore
 from SpeakerNet import SpeakerNet
@@ -54,6 +55,8 @@ parser.add_argument('--save-tmp-model-to', type=str, default="./tmp/model/");
 parser.add_argument('--save-tmp-results-to', type=str, default="./tmp/results/");
 parser.add_argument('--save-tmp-feats-to', type=str, default="./tmp/feats/");
 parser.add_argument('--save-tmp-wandb-to', type=str, default="./tmp/");
+
+parser.add_argument('--set-seed', action='store_true')
 
 parser.add_argument('--checkpoint-bucket', type=str,
         default="voxsrc-2020-checkpoints-dev");
@@ -107,6 +110,15 @@ parser.add_argument('--encoder_type', type=str, default="SAP",  help='Type of en
 parser.add_argument('--nOut', type=int,         default=512,    help='Embedding size in the last FC layer');
 
 args = parser.parse_args();
+
+# set random seeds
+# @TODO any reason to use BOTH 'random' and 'numpy.random'?
+if args.set_seed:
+    print("Using fixed random seed")
+    random.seed(0)
+    numpy.random.seed(0)
+    torch.manual_seed(0)
+    torch.cuda.manual_seed(0)
 
 # touch wandb tmp dir
 print(f"Creating directory {args.save_tmp_wandb_to}")
