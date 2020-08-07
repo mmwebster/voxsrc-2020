@@ -109,7 +109,9 @@ class DatasetLoader(object):
                 for ij in range(index,index+self.batch_size):
                     # @note if there aren't enough independent
                     #       speakers, the batch won't be fillable
-                    feat.append(loadWAV(self.data_list[ij][ii], self.max_frames, evalmode=False));
+                    spectrogram = numpy.load(self.data_list[ij][ii].replace(".wav", ".npy"))
+                    spectrogram_torch_tensor = torch.FloatTensor(spectrogram)
+                    feat.append(spectrogram_torch_tensor);
                 in_data.append(torch.cat(feat, dim=0));
 
             in_label = numpy.asarray(self.data_label[index:index+self.batch_size]);

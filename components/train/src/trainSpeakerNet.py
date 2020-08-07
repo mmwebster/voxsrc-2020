@@ -118,6 +118,10 @@ wandb.init(project="voxsrc-2020-v1", config=args, id=args.run_id,
 train_list, test_list, train_path, test_path = [None, None, None, None]
 
 ## Fetch data from GCS if enabled
+# @TODO replace these entire set of conditions with just a download, extract,
+#       and path setting. Skipping the fetch, and using an existing downloaded
+#       dataset should already be working with the data fetch functions on
+#       their own
 if args.data_bucket is not None and not args.skip_data_fetch:
     print("Installing dataset from GCS")
     # @TODO mimic the --install-local-dataset function in
@@ -127,7 +131,6 @@ if args.data_bucket is not None and not args.skip_data_fetch:
     # download, extract, transcode (compressed AAC->WAV) dataset
     download_gcs_dataset(args)
     extract_gcs_dataset(args)
-    transcode_gcs_dataset(args)
     # set new lists and data paths
     train_list, test_list, train_path, test_path \
         = set_loc_paths_from_gcs_dataset(args)

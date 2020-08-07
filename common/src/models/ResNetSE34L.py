@@ -30,7 +30,6 @@ class ResNetSE(nn.Module):
         self.avgpool = nn.AvgPool2d((5, 1), stride=1)
 
         self.instancenorm   = nn.InstanceNorm1d(40)
-        self.torchfb        = torchaudio.transforms.MelSpectrogram(sample_rate=16000, n_fft=512, win_length=400, hop_length=160, f_min=0.0, f_max=8000, pad=0, n_mels=40)
 
         if self.encoder_type == "SAP":
             self.sap_linear = nn.Linear(num_filters[3] * block.expansion, num_filters[3] * block.expansion)
@@ -72,8 +71,7 @@ class ResNetSE(nn.Module):
 
     def forward(self, x):
 
-        x = self.torchfb(x)+1e-6
-        x = self.instancenorm(x.log()).unsqueeze(1).detach()
+        x = self.instancenorm(x).unsqueeze(1).detach()
 
         x = self.conv1(x)
         x = self.bn1(x)
