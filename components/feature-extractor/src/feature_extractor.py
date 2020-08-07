@@ -238,7 +238,7 @@ for batch_utterance_feats, batch_utterance_paths in trainLoader:
         Path(os.path.dirname(spectrogram_file_name)).mkdir(parents=True,
                 exist_ok=True)
         # save the spectrogram data to file
-        numpy.save(spectrogram_file_name, log_mel_filter_bank.numpy())
+        numpy.save(spectrogram_file_name, log_mel_filter_bank.numpy().astype('float16'))
 
     # status update
     if status_batches_processed % status_update_interval == 0:
