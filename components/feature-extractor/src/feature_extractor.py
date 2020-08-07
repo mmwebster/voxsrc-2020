@@ -117,6 +117,8 @@ parser.add_argument('--nOut', type=int,         default=512,    help='Embedding 
 
 args = parser.parse_args();
 
+print(args)
+
 # set random seeds
 # @TODO any reason to use BOTH 'random' and 'numpy.random'?
 if args.set_seed:
