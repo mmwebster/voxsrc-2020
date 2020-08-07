@@ -248,5 +248,22 @@ for batch_utterance_feats, batch_utterance_paths in trainLoader:
 
     status_batches_processed += 1
 
+# write arg parse params to metadata.txt
+metadata_file_path = os.path.join(args.save_tmp_data_to,
+        extracted_feats_dataset_name, 'metadata.txt')
+
+with open(metadata_file_path, "w") as f:
+    # add arg parse params
+    for items in vars(args):
+        f.write(f"{items}: {vars(args)[items]}\n")
+    # add git state
+    git_hash_dirty = subprocess.check_output(['git', 'rev-parse', 'HEAD'])
+    git_hash_clean = git_hash_dirty.decode('utf8').replace('\n','')
+    f.write(f"Git commit: {git_hash_clean}\n")
+    git_status_dirty = subprocess.check_output(['git', 'diff', '--stat'])
+    git_status_clean = git_status_dirty.decode('utf8')
+    git_status = 'clean' if git_status_clean == "" else 'dirty'
+    f.write(f"Git status: {git_status}\n")
+
 print(f"Finished in {time.time() - start_time} seconds")
 print(f"Extracted features saved to {extracted_feats_dataset_name}")

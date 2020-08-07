@@ -34,20 +34,14 @@ def loadWAV(filename, max_frames, evalmode=True, num_eval=10):
         audio       = numpy.pad(audio, (shortage, shortage), 'constant', constant_values=0)
         actual_audio_length   = audio.shape[0]
 
-    # set deterministic or random initial frame based on eval/not eval
-    if evalmode:
-        startframe = numpy.linspace(0,actual_audio_length-desired_audio_length,num=num_eval)
-    else:
-        startframe = numpy.array([numpy.int64(random.random()*(actual_audio_length-desired_audio_length))])
-
     # grab 'desired_audio_length'-long subset of audio segment
     feats = []
-    if evalmode and max_frames == 0:
-        feats.append(audio)
-    else:
-        # @TODO Why is startframe an array? Currently iterating through 1 element...
+    if evalmode and max_frames != 0:
+        startframe = numpy.linspace(0,actual_audio_length-desired_audio_length,num=num_eval)
         for asf in startframe:
             feats.append(audio[int(asf):int(asf)+desired_audio_length])
+    else:
+        feats.append(audio)
 
     # load into torch float tensor
     feat = numpy.stack(feats,axis=0)
