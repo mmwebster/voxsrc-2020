@@ -9,6 +9,7 @@ sys.path.insert(0, os.getenv('VOX_COMMON_SRC_DIR'))
 
 import time, os, argparse, socket
 import random
+import math
 import numpy
 import pdb
 import torch
@@ -178,13 +179,6 @@ sumloss     = 0;
 
 # Load model weights
 
-# Check for training meta data from a previously preempted run
-METADATA_NAME = 'metadata.yaml'
-metadata_gcs_src_path = os.path.join(args.run_id, METADATA_NAME)
-metadata_file_dst_path = os.path.join(args.save_tmp_model_to, METADATA_NAME)
-default_metadata = {'is_done': False}
-metadata = default_metadata
-
 ## Assertion
 gsize_dict  = {'proto':args.nSpeakers, 'triplet':2, 'contrastive':2, 'softmax':1, 'amsoftmax':1, 'aamsoftmax':1, 'ge2e':args.nSpeakers, 'angleproto':args.nSpeakers}
 
@@ -199,47 +193,58 @@ trainLoader = DatasetLoader(train_list,
 torchfb = torchaudio.transforms.MelSpectrogram(sample_rate=16000, n_fft=512,
         win_length=400, hop_length=160, f_min=0.0, f_max=8000, pad=0, n_mels=40)
 
-count = 0
 start_time = time.time()
 
 # grab names of test and train from paths
 test_name = args.test_path.replace(".tar.gz", "")
 train_name = args.train_path.replace(".tar.gz", "")
 
-# iterate through sets of batches, as provided by data load workers
-# @note the speakers at each index within a batch for a single set of batches
-#       are teh same. This is why batch_labels is lower-dim than batches
-for batches, batch_labels, batches_paths in trainLoader:
-    feat = []
-    ## print some spectrograms
-    #for batch in batches:
-    #    mel_filter_bank = torchfb(batch.to(device))+1e-6
-    #    plt.figure()
-    #    #plt.imsave(f"/mnt/c/wsl-shared/voxsrc-2020/spec-{count}.png", mel_filter_bank.log()[0,:,:].numpy(), cmap='gray')
-    #    print(f"Current labels: {batch_labels}")
-    #    plt.imsave(f"/mnt/c/wsl-shared/voxsrc-2020/spec-1.png", mel_filter_bank.log()[0,:,:].numpy(), cmap='gray')
-    #    plt.figure()
-    #    plt.plot(batch[0,:].numpy())
-    #    plt.savefig(f"/mnt/c/wsl-shared/voxsrc-2020/vis-1.png")
-    #    count += 1
-    #    break
-    #break
+extracted_feats_dataset_name = f"{train_name}_feats_{args.run_id}"
 
-    # iterate through batches in the current loaded set
-    for batch_index, batch in enumerate(batches):
-        mel_filter_bank = torchfb(batch.to(device))+1e-6
+## print some spectrograms
+#    mel_filter_bank = torchfb(batch.to(device))+1e-6
+#    plt.figure()
+#    #plt.imsave(f"/mnt/c/wsl-shared/voxsrc-2020/spec-{count}.png", mel_filter_bank.log()[0,:,:].numpy(), cmap='gray')
+#    print(f"Current labels: {batch_labels}")
+#    plt.imsave(f"/mnt/c/wsl-shared/voxsrc-2020/spec-1.png", mel_filter_bank.log()[0,:,:].numpy(), cmap='gray')
+#    plt.figure()
+#    plt.plot(batch[0,:].numpy())
+#    plt.savefig(f"/mnt/c/wsl-shared/voxsrc-2020/vis-1.png")
+#    count += 1
+#    break
+
+# @TODO Is there a package that does this without the inline update that tqdm
+#       does? (which doesn't play nice with stackdrive kubeflow logs)
+status_update_percentage = 10
+status_update_interval = math.floor(len(trainLoader) * (status_update_percentage / 100))
+status_batches_processed = 0
+
+# @TODO use batches of utterance feats instead of single
+for batch_utterance_feats, batch_utterance_paths in trainLoader:
+    for utterance_index in range(0, len(batch_utterance_paths)):
+        utterance_feats = batch_utterance_feats[utterance_index]
+        utterance_path = batch_utterance_paths[utterance_index]
+
+        mel_filter_bank = torchfb(utterance_feats.to(device))+1e-6
         log_mel_filter_bank = mel_filter_bank.cpu().log()
-        for sample_index, sample in enumerate(log_mel_filter_bank):
-            # grab original WAV filename
-            wav_file_name = batches_paths[batch_index][sample_index]
-            # remove the ".wav" and add a _feats_[run id] to the name of the dataset
-            spectrogram_file_name = wav_file_name\
-                    .replace(".wav", "")\
-                    .replace(train_name, f"{train_name}_feats_{args.run_id}")
-            # ensure path to file exists
-            Path(os.path.dirname(spectrogram_file_name)).mkdir(parents=True,
-                    exist_ok=True)
-            # save the spectrogram data to file
-            numpy.save(spectrogram_file_name, sample.numpy())
+
+        # remove the ".wav" and add a _feats_[run id] to the name of the dataset
+        spectrogram_file_name = utterance_path\
+                .replace(".wav", "")\
+                .replace(train_name, extracted_feats_dataset_name)
+        # ensure path to file exists
+        Path(os.path.dirname(spectrogram_file_name)).mkdir(parents=True,
+                exist_ok=True)
+        # save the spectrogram data to file
+        numpy.save(spectrogram_file_name, log_mel_filter_bank.numpy())
+
+    # status update
+    if status_batches_processed % status_update_interval == 0:
+        print(f"Processed {status_batches_processed}/{len(trainLoader)} "
+              f"batches in {time.time() - start_time}")
+        status_time = time.time()
+
+    status_batches_processed += 1
 
 print(f"Finished in {time.time() - start_time} seconds")
+print(f"Extracted features saved to {extracted_feats_dataset_name}")

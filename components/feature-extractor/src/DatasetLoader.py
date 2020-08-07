@@ -70,127 +70,70 @@ class DatasetLoader(object):
         self.gSize  = gSize; ## number of clips per sample (e.g. 1 for softmax, 2 for triplet or pm)
 
         self.dataLoaders = [];
-        
+        self.utterances = []
+        self.num_utterances = 0
+
         ### Read Training Files...
         with open(dataset_file_name) as dataset_file:
             while True:
                 line = dataset_file.readline();
                 if not line:
                     break;
-                
+
                 data = line.split();
                 speaker_name = data[0];
                 filename = os.path.join(new_train_path,data[1]);
-
-                if not (speaker_name in self.data_dict):
-                    self.data_dict[speaker_name] = [];
-
-                self.data_dict[speaker_name].append(filename);
+                self.utterances.append({'speaker_name': speaker_name, 'filename': filename})
+                self.num_utterances += 1
 
         ### Initialize Workers...
         self.datasetQueue = Queue(self.maxQueueSize);
-    
 
-    def dataLoaderThread(self, nThreadIndex):
-        
-        index = nThreadIndex*self.batch_size;
-
-        if(index >= self.nFiles):
-            return;
-
-        while(True):
+    # @TODO load in batches for performance boost
+    def dataLoaderThread(self, thread_index):
+        iter_index = 0
+        done = False
+        while(not done):
+            # wait if queue is full
             if(self.datasetQueue.full() == True):
                 time.sleep(1.0);
                 continue;
 
-            in_data = [];
-            multi_batch_paths = []
-            # iterate through the 2nd dim of self.data_list, setting 'ii' to be
-            # a position within a tuple
-            for ii in range(0,self.gSize):
-                batch_paths = []
-                feat = []
-                # iterate through the 1st dim of self.data_list, setting ij to
-                # be a tuple index from "index" to "index + self.batch_size"
-                for ij in range(index,index+self.batch_size):
-                    # @warning if there aren't enough unique speakers, the batch
-                    #          won't be fillable
-                    # append a single utterance to the batch's features
-                    feat.append(loadWAV(self.data_list[ij][ii], self.max_frames,
-                        evalmode=False));
-                    batch_paths.append(self.data_list[ij][ii])
-                # append the batch containing unique speakers
-                in_data.append(torch.cat(feat, dim=0));
-                multi_batch_paths.append(batch_paths)
+            # get index of beginning of batch
+            inter_thread_group_offset = iter_index * self.nWorkers * self.batch_size
+            intra_thread_group_offset = thread_index * self.batch_size
+            batch_start_index = inter_thread_group_offset + intra_thread_group_offset
 
-            in_label = numpy.asarray(self.data_label[index:index+self.batch_size]);
+            batch_utterance_feats = []
+            batch_utterance_paths = []
 
-            self.datasetQueue.put([in_data, in_label, multi_batch_paths]);
+            # add utterance batch to data queue
+            for utterance_index in range(batch_start_index, batch_start_index + self.batch_size):
+                # exit if this loader has finished all its utterances
+                if utterance_index >= self.num_utterances:
+                    done = True
+                    break
 
-            index += self.batch_size*self.nWorkers;
+                utterance_path = self.utterances[utterance_index]['filename']
 
-            if(index+self.batch_size > self.nFiles):
-                break;
+                # append their features, paths, and labels
+                batch_utterance_paths.append(utterance_path)
+                batch_utterance_feats.append(loadWAV(utterance_path, self.max_frames, evalmode=False))
 
+            # push it on
+            self.datasetQueue.put([batch_utterance_feats, batch_utterance_paths]);
 
+            iter_index += 1
+
+        print(f"data loader #{thread_index} finished")
 
     def __iter__(self):
-
-        dictkeys = list(self.data_dict.keys());
-        dictkeys.sort()
-
-        lol = lambda lst, sz: [lst[i:i+sz] for i in range(0, len(lst), sz)]
-
-        # contains list of speakers, each containing a list of file paths to
-        # their utterances
-        flattened_list = []
-        # contains list of training labels (integer speaker IDs) where the index
-        # corresponds to the respective place in the flattened_list (if it were
-        # truly flattened, instead of a list of lists)
-        flattened_label = []
-
-        ## Data for each class
-        for findex, key in enumerate(dictkeys):
-            # key is speaker ID
-            data    = self.data_dict[key]
-            numSeg  = round_down(min(len(data),self.max_seg_per_spk),self.gSize)
-
-            rp      = lol(numpy.random.permutation(len(data))[:numSeg],self.gSize)
-            flattened_label.extend([findex] * (len(rp)))
-            for indices in rp:
-                flattened_list.append([data[i] for i in indices])
-
-        ## Data in random order
-        mixid           = numpy.random.permutation(len(flattened_label))
-        mixlabel        = []
-        # contains utterance indices that will be used (after multi pair removal)
-        mixmap          = []
-
-        ## Prevent two pairs of the same speaker in the same batch
-        # @TODO This code is now a trivial pass through. Remove it
-        for ii in mixid:
-            startbatch = len(mixlabel) - len(mixlabel) % self.batch_size
-            mixlabel.append(flattened_label[ii])
-            mixmap.append(ii)
-
-        # contains 'nSpeakers' tuples of each speaker's utterances, multiples
-        # tuples per speaker. Not sure how this is, when the code above "prevents
-        # two pairs of the same speaker in the same batch"
-        self.data_list  = [flattened_list[i] for i in mixmap]
-        # contains integer speaker ID label for the respective tuple in
-        # self.data_list
-        self.data_label = [flattened_label[i] for i in mixmap]
-
-        ## Iteration size
-        self.nFiles = len(self.data_label);
-
-        ### Make and Execute Threads...
+        # start data loader threads
         for index in range(0, self.nWorkers):
             self.dataLoaders.append(threading.Thread(target = self.dataLoaderThread, args = [index]));
             self.dataLoaders[-1].start();
 
         return self;
-
 
     # @TODO refactor
     def __next__(self):
@@ -221,6 +164,8 @@ class DatasetLoader(object):
             self.dataLoaders = [];
             raise StopIteration;
 
+    def __len__(self):
+        return math.ceil(self.num_utterances / self.batch_size)
 
     def __call__(self):
         pass;
