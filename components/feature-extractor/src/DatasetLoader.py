@@ -90,6 +90,7 @@ class DatasetLoader(object):
         while(not done):
             # wait if queue is full
             if(self.datasetQueue.full() == True):
+                print(f"== producer #{thread_index} sleeping")
                 time.sleep(1.0);
                 continue;
 
@@ -115,11 +116,12 @@ class DatasetLoader(object):
                 batch_utterance_feats.append(loadWAV(utterance_path, self.max_frames, evalmode=False))
 
             # push it on
+            print(f"<- producer #{thread_index} pushing batch")
             self.datasetQueue.put([batch_utterance_feats, batch_utterance_paths]);
 
             iter_index += 1
 
-        print(f"data loader #{thread_index} finished")
+        print(f". producer #{thread_index} finished")
 
     def __iter__(self):
         # start data loader threads

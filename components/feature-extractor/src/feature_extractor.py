@@ -17,6 +17,7 @@ import torchaudio
 import glob
 from baseline_misc.tuneThreshold import tuneThresholdfromScore
 from DatasetLoader import DatasetLoader
+from DatasetWriter import DatasetWriter
 import subprocess
 import time
 from pathlib import Path
@@ -221,32 +222,38 @@ status_update_percentage = 10
 status_update_interval = math.floor(len(trainLoader) * (status_update_percentage / 100))
 status_batches_processed = 0
 
-# @TODO use batches of utterance feats instead of single
-for batch_utterance_feats, batch_utterance_paths in trainLoader:
-    for utterance_index in range(0, len(batch_utterance_paths)):
-        utterance_feats = batch_utterance_feats[utterance_index]
-        utterance_path = batch_utterance_paths[utterance_index]
+with DatasetWriter() as dataset_writer:
+    # @TODO use batches of utterance feats instead of single
+    for batch_utterance_wavs, batch_utterance_wav_paths in trainLoader:
+        print("-> Processing batch")
+        # extract the batch (cpu bound)
+        # @TODO distribute this with multiprocessing lib
+        for utterance_index in range(0, len(batch_utterance_wav_paths)):
+            utterance_feats = batch_utterance_wavs[utterance_index]
+            utterance_path = batch_utterance_wav_paths[utterance_index]
 
-        mel_filter_bank = torchfb(utterance_feats.to(device))+1e-6
-        log_mel_filter_bank = mel_filter_bank.cpu().log()
+            # @TODO run torchfb transform on a torch tensor of all samples in the
+            #       batch, instead of just one
+            mel_filter_bank = torchfb(utterance_feats.to(device))+1e-6
+            log_mel_filter_bank = mel_filter_bank.cpu().log()
 
-        # remove the ".wav" and add a _feats_[run id] to the name of the dataset
-        spectrogram_file_name = utterance_path\
-                .replace(".wav", "")\
-                .replace(train_name, extracted_feats_dataset_name)
-        # ensure path to file exists
-        Path(os.path.dirname(spectrogram_file_name)).mkdir(parents=True,
-                exist_ok=True)
-        # save the spectrogram data to file
-        numpy.save(spectrogram_file_name, log_mel_filter_bank.numpy().astype('float16'))
+            # remove the ".wav" and add a _feats_[run id] to the name of the dataset
+            spectrogram_file_name = utterance_path\
+                    .replace(".wav", "")\
+                    .replace(train_name, extracted_feats_dataset_name)
 
-    # status update
-    if status_batches_processed % status_update_interval == 0:
-        print(f"Processed {status_batches_processed}/{len(trainLoader)} "
-              f"batches in {time.time() - start_time}")
-        status_time = time.time()
+            # queue the data for writing by thread pool (io-bound task),
+            # blocking if queue is full
+            dataset_writer.enqueue(log_mel_filter_bank.numpy().astype('float16'),
+                    spectrogram_file_name)
 
-    status_batches_processed += 1
+        # status update
+        if status_batches_processed % status_update_interval == 0:
+            print(f"Processed {status_batches_processed}/{len(trainLoader)} "
+                  f"batches in {time.time() - start_time}")
+            status_time = time.time()
+
+        status_batches_processed += 1
 
 # write arg parse params to metadata.txt
 metadata_file_path = os.path.join(args.save_tmp_data_to,
