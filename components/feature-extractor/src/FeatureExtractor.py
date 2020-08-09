@@ -6,6 +6,7 @@ import numpy
 import os
 import time
 import torch
+import subprocess
 
 class FeatureExtractor():
     def __init__(self, src_list_path, src_data_path, dst_feats_path,
@@ -16,7 +17,11 @@ class FeatureExtractor():
         self.dst_feats_path = dst_feats_path
         self.feature_extractor_fn = feature_extractor_fn
         self.num_threads = num_threads
-        # default states
+
+        # misc
+        update_interval_percent = 10
+        self.num_jobs = self.get_num_lines(self.src_list_path)
+        self.update_interval = int(self.num_jobs / update_interval_percent)
         self.threads = []
         self.job_queue = queue.Queue(job_max_queue_size)
         self.done = False
@@ -37,6 +42,7 @@ class FeatureExtractor():
     #       processing the dataset
     # @TODO make async and add a join method
     def run(self):
+        lines_processed = 0
         with open(self.src_list_path) as src_list:
             print(f"FeatureExtractor: Beginning to queue file paths")
             while True:
@@ -55,6 +61,11 @@ class FeatureExtractor():
                         failed = False
                     except queue.Full:
                         print(f"FeatureExtractor: Timed out while queuing job")
+                lines_processed += 1
+                if lines_processed % self.update_interval == 0:
+                    print(f"FeatureExtractor: Queued "
+                          f"{int(100*lines_processed/self.num_jobs)}% of "
+                          f"{self.num_jobs} jobs")
             print(f"FeatureExtractor: Finished queueing file paths")
 
     def spawn_threads(self):
@@ -112,3 +123,8 @@ class FeatureExtractor():
                 exist_ok=True)
         # save the features to file
         numpy.save(utterance_feats_path, utterance_feats)
+
+    # @TODO move to utils
+    def get_num_lines(self, file_path):
+        wc_cmd = subprocess.check_output(['wc', '-l', file_path])
+        return int(wc_cmd.decode('utf8').split()[0])
