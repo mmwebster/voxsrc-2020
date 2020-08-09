@@ -16,8 +16,7 @@ import torch
 import torchaudio
 import glob
 from baseline_misc.tuneThreshold import tuneThresholdfromScore
-from DatasetLoader import DatasetLoader
-from DatasetWriter import DatasetWriter
+from FeatureExtractor import FeatureExtractor
 import subprocess
 import time
 from pathlib import Path
@@ -132,6 +131,8 @@ if args.set_seed:
 train_list, test_list, train_path, test_path = [None, None, None, None]
 
 ## Fetch data from GCS if enabled
+# @TODO remove all except download, extract, transcode, set_loc calls and test
+#       for regression
 if args.data_bucket is not None and not args.skip_data_fetch:
     print("Installing dataset from GCS")
     # @TODO mimic the --install-local-dataset function in
@@ -176,84 +177,28 @@ use_cuda = cuda_avail and not args.no_cuda
 print(f"Using cuda: {use_cuda}")
 device = torch.device("cuda" if use_cuda else "cpu")
 
-it          = 1;
-prevloss    = float("inf");
-sumloss     = 0;
-
-# Load model weights
-
-## Assertion
-gsize_dict  = {'proto':args.nSpeakers, 'triplet':2, 'contrastive':2, 'softmax':1, 'amsoftmax':1, 'aamsoftmax':1, 'ge2e':args.nSpeakers, 'angleproto':args.nSpeakers}
-
-assert args.trainfunc in gsize_dict
-assert gsize_dict[args.trainfunc] <= 100
-
-## Initialise data loader
-trainLoader = DatasetLoader(train_list,
-        gSize=gsize_dict[args.trainfunc], new_train_path=train_path,
-        **vars(args));
-
 torchfb = torchaudio.transforms.MelSpectrogram(sample_rate=16000, n_fft=512,
         win_length=400, hop_length=160, f_min=0.0, f_max=8000, pad=0, n_mels=40)
+
+def feature_extractor_fn(utterance_wav):
+    mel_filter_bank = torchfb(utterance_wav.to(device))+1e-6
+    log_mel_filter_bank = mel_filter_bank.cpu().log()
+    return log_mel_filter_bank.numpy().astype('float16')
 
 start_time = time.time()
 
 # grab names of test and train from paths
-test_name = args.test_path.replace(".tar.gz", "")
 train_name = args.train_path.replace(".tar.gz", "")
 
 extracted_feats_dataset_name = f"{train_name}_feats_{args.run_id}"
+dst_feats_path = os.path.join(args.save_tmp_data_to, extracted_feats_dataset_name)
 
-## print some spectrograms
-#    mel_filter_bank = torchfb(batch.to(device))+1e-6
-#    plt.figure()
-#    #plt.imsave(f"/mnt/c/wsl-shared/voxsrc-2020/spec-{count}.png", mel_filter_bank.log()[0,:,:].numpy(), cmap='gray')
-#    print(f"Current labels: {batch_labels}")
-#    plt.imsave(f"/mnt/c/wsl-shared/voxsrc-2020/spec-1.png", mel_filter_bank.log()[0,:,:].numpy(), cmap='gray')
-#    plt.figure()
-#    plt.plot(batch[0,:].numpy())
-#    plt.savefig(f"/mnt/c/wsl-shared/voxsrc-2020/vis-1.png")
-#    count += 1
-#    break
+start_time = time.time()
 
-# @TODO Is there a package that does this without the inline update that tqdm
-#       does? (which doesn't play nice with stackdrive kubeflow logs)
-status_update_percentage = 10
-status_update_interval = math.floor(len(trainLoader) * (status_update_percentage / 100))
-status_batches_processed = 0
-
-with DatasetWriter() as dataset_writer:
-    # @TODO use batches of utterance feats instead of single
-    for batch_utterance_wavs, batch_utterance_wav_paths in trainLoader:
-        print("-> Processing batch")
-        # extract the batch (cpu bound)
-        # @TODO distribute this with multiprocessing lib
-        for utterance_index in range(0, len(batch_utterance_wav_paths)):
-            utterance_feats = batch_utterance_wavs[utterance_index]
-            utterance_path = batch_utterance_wav_paths[utterance_index]
-
-            # @TODO run torchfb transform on a torch tensor of all samples in the
-            #       batch, instead of just one
-            mel_filter_bank = torchfb(utterance_feats.to(device))+1e-6
-            log_mel_filter_bank = mel_filter_bank.cpu().log()
-
-            # remove the ".wav" and add a _feats_[run id] to the name of the dataset
-            spectrogram_file_name = utterance_path\
-                    .replace(".wav", "")\
-                    .replace(train_name, extracted_feats_dataset_name)
-
-            # queue the data for writing by thread pool (io-bound task),
-            # blocking if queue is full
-            dataset_writer.enqueue(log_mel_filter_bank.numpy().astype('float16'),
-                    spectrogram_file_name)
-
-        # status update
-        if status_batches_processed % status_update_interval == 0:
-            print(f"Processed {status_batches_processed}/{len(trainLoader)} "
-                  f"batches in {time.time() - start_time}")
-            status_time = time.time()
-
-        status_batches_processed += 1
+# init the feature extractor and run it
+with FeatureExtractor(train_list, train_path, dst_feats_path,
+        feature_extractor_fn) as feature_extractor:
+    feature_extractor.run()
 
 # write arg parse params to metadata.txt
 metadata_file_path = os.path.join(args.save_tmp_data_to,
