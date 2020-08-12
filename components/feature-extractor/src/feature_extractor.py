@@ -20,9 +20,9 @@ from FeatureExtractor import FeatureExtractor
 import subprocess
 import time
 from pathlib import Path
-from data_fetch import download_gcs_dataset, extract_gcs_dataset, \
+from data_utils import download_gcs_dataset, extract_gcs_dataset, \
                      transcode_gcs_dataset, set_loc_paths_from_gcs_dataset,\
-                     download_blob, upload_blob
+                     download_blob, upload_blob, compress_to_tar
 import yaml
 import pwd
 import google
@@ -63,6 +63,7 @@ parser.add_argument('--save-tmp-wandb-to', type=str, default="./tmp/");
 
 parser.add_argument('--no-cuda', action='store_true');
 parser.add_argument('--set-seed', action='store_true');
+parser.add_argument('--no-upload', action='store_true')
 
 parser.add_argument('--checkpoint-bucket', type=str,
         default="voxsrc-2020-checkpoints-dev");
@@ -137,7 +138,7 @@ if args.data_bucket is not None and not args.skip_data_fetch:
     print("Installing dataset from GCS")
     # @TODO mimic the --install-local-dataset function in
     #       data/utils.py, using the newer functions that it invokes
-    #       in common/src/data_fetch.py
+    #       in common/src/data_utils.py
 
     # download, extract, transcode (compressed AAC->WAV) dataset
     download_gcs_dataset(args)
@@ -200,6 +201,16 @@ with FeatureExtractor(train_list, train_path, dst_feats_path,
         feature_extractor_fn) as feature_extractor:
     feature_extractor.run()
 
+# tar up the result
+dst_feats_path_without_trailing_slash = os.path.join(dst_feats_path, '')[:-1]
+dst_tar_file_path = dst_feats_path_without_trailing_slash + '.tar.gz'
+compress_to_tar(dst_feats_path, dst_tar_file_path)
+
+# upload the tar to GCS in data_bucket at top level
+if not args.no_upload:
+    dst_tar_file_name = extracted_feats_dataset_name + '.tar.gz'
+    upload_blob(args.data_bucket, dst_tar_file_name, dst_tar_file_path)
+
 # write arg parse params to metadata.txt
 metadata_file_path = os.path.join(args.save_tmp_data_to,
         extracted_feats_dataset_name, 'metadata.txt')
@@ -217,5 +228,6 @@ with open(metadata_file_path, "w") as f:
     git_status = 'clean' if git_status_clean == "" else 'dirty'
     f.write(f"Git status: {git_status}\n")
 
-print(f"Finished in {time.time() - start_time} seconds")
-print(f"Extracted features saved to {extracted_feats_dataset_name}")
+print(f"Finished in {time.time() - start_time} (s)")
+print(f"Extracted features saved to {dst_feats_path}")
+print(f"Tar file saved to {dst_tar_file_path}")

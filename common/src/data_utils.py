@@ -7,6 +7,7 @@ import glob
 import os
 from google.cloud import storage
 from google.auth import compute_engine
+from pathlib import Path
 
 NUM_CORES_DEFAULT = 4
 
@@ -26,12 +27,17 @@ def get_storage_client():
                 credentials=compute_engine.Credentials(),
                 project='voxsrc-2020-dev-1')
 
-def upload_blob(bucket_name, dst_blob_name, src_file_name):
+def upload_blob(bucket_name, dst_blob_path, src_file_path):
+    start_time = time.time()
     storage_client = get_storage_client()
 
     bucket = storage_client.bucket(bucket_name)
-    blob = bucket.blob(dst_blob_name)
-    blob.upload_from_filename(src_file_name)
+    blob = bucket.blob(dst_blob_path)
+
+    blob.upload_from_filename(src_file_path)
+
+    print(f"Uploaded {src_file_path} to gcs://{bucket_name}/{dst_blob_path} "
+          f"in {time.time() - start_time} (s)")
 
 # @brief Download a blob from GCS
 # @credit Google Cloud SDK docs
@@ -243,3 +249,27 @@ def set_loc_paths_from_gcs_dataset(args):
     test_path = os.path.join(args.save_tmp_data_to,
             args.test_path.split(".tar.gz")[0])
     return train_list, test_list, train_path, test_path
+
+# @brief Compress a directory into a tar file. Usage includes compressing
+#        extracted feature directory
+# @param src_dir_path Full path to directory to compress, with or without a
+#                     trailing slash
+# @param dst_file_path Full path to tar file output, including the
+#                      trailing .tar.gz
+def compress_to_tar(src_dir_path, dst_file_path):
+    # add trailing slashes if not present
+    start_time = time.time()
+    src_dir_path = os.path.join(src_dir_path, '')
+
+    # ensure tar parent dir exists, and extract other paths
+    Path(os.path.dirname(dst_file_path)).mkdir(parents=True, exist_ok=True)
+    src_dir_split = os.path.split(os.path.dirname(src_dir_path))
+    src_dir_parent_path = src_dir_split[0]
+    src_dir_name = src_dir_split[1]
+
+    # tar it
+    cmd = f"tar -C {src_dir_parent_path} -zcvf {dst_file_path} {src_dir_name} > /dev/null"
+    subprocess.call(cmd, shell=True)
+
+    print(f"Compressed {src_dir_path} to {dst_file_path} in "
+          f"{time.time() - start_time} (s)")

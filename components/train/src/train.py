@@ -19,7 +19,7 @@ from DatasetLoader import DatasetLoader
 import subprocess
 import time
 from pathlib import Path
-from data_fetch import download_gcs_dataset, extract_gcs_dataset, \
+from data_utils import download_gcs_dataset, extract_gcs_dataset, \
                      transcode_gcs_dataset, set_loc_paths_from_gcs_dataset,\
                      download_blob, upload_blob
 import yaml
@@ -138,7 +138,7 @@ if args.data_bucket is not None and not args.skip_data_fetch:
     print("Installing dataset from GCS")
     # @TODO mimic the --install-local-dataset function in
     #       data/utils.py, using the newer functions that it invokes
-    #       in common/src/data_fetch.py
+    #       in common/src/data_utils.py
 
     # download, extract, transcode (compressed AAC->WAV) dataset
     download_gcs_dataset(args)
