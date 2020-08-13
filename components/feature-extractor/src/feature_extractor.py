@@ -27,7 +27,6 @@ import yaml
 import pwd
 import google
 import wandb
-import matplotlib.pyplot as plt
 
 # @TODO Strip this file of all training related stuff, not needed for a pure
 #       feature extractor
@@ -64,6 +63,8 @@ parser.add_argument('--save-tmp-wandb-to', type=str, default="./tmp/");
 parser.add_argument('--no-cuda', action='store_true');
 parser.add_argument('--set-seed', action='store_true');
 parser.add_argument('--no-upload', action='store_true')
+parser.add_argument('--output-path-test-feats-tar-path', type=str, default="./tmp/outputs/test_feats_tar_path")
+parser.add_argument('--output-path-train-feats-tar-path', type=str, default="./tmp/outputs/train_feats_tar_path")
 
 parser.add_argument('--checkpoint-bucket', type=str,
         default="voxsrc-2020-checkpoints-dev");
@@ -201,16 +202,6 @@ with FeatureExtractor(train_list, train_path, dst_feats_path,
         feature_extractor_fn) as feature_extractor:
     feature_extractor.run()
 
-# tar up the result
-dst_feats_path_without_trailing_slash = os.path.join(dst_feats_path, '')[:-1]
-dst_tar_file_path = dst_feats_path_without_trailing_slash + '.tar.gz'
-compress_to_tar(dst_feats_path, dst_tar_file_path)
-
-# upload the tar to GCS in data_bucket at top level
-if not args.no_upload:
-    dst_tar_file_name = extracted_feats_dataset_name + '.tar.gz'
-    upload_blob(args.data_bucket, dst_tar_file_name, dst_tar_file_path)
-
 # write arg parse params to metadata.txt
 metadata_file_path = os.path.join(args.save_tmp_data_to,
         extracted_feats_dataset_name, 'metadata.txt')
@@ -220,13 +211,50 @@ with open(metadata_file_path, "w") as f:
     for items in vars(args):
         f.write(f"{items}: {vars(args)[items]}\n")
     # add git state
-    git_hash_dirty = subprocess.check_output(['git', 'rev-parse', 'HEAD'])
-    git_hash_clean = git_hash_dirty.decode('utf8').replace('\n','')
-    f.write(f"Git commit: {git_hash_clean}\n")
-    git_status_dirty = subprocess.check_output(['git', 'diff', '--stat'])
-    git_status_clean = git_status_dirty.decode('utf8')
-    git_status = 'clean' if git_status_clean == "" else 'dirty'
-    f.write(f"Git status: {git_status}\n")
+    git_hash_clean = "N/A"
+    git_status = "N/A"
+    try:
+        # commit hash
+        git_hash_dirty = subprocess.check_output(['git', 'rev-parse', 'HEAD'])
+        git_hash_clean = git_hash_dirty.decode('utf8').replace('\n','')
+        # clean/dirty status of local git
+        git_status_dirty = subprocess.check_output(['git', 'diff', '--stat'])
+        git_status_clean = git_status_dirty.decode('utf8')
+        git_status = 'clean' if git_status_clean == "" else 'dirty'
+        # write them
+        f.write(f"Git commit: {git_hash_clean}\n")
+        f.write(f"Git status: {git_status}\n")
+    except subprocess.CalledProcessError:
+        f.write(f"Git commit: [N/A... on cluster]\n")
+        f.write(f"Git status: [N/A... on cluster]\n")
+
+# tar up the result
+dst_feats_path_without_trailing_slash = os.path.join(dst_feats_path, '')[:-1]
+dst_tar_file_path = dst_feats_path_without_trailing_slash + '.tar.gz'
+compress_to_tar(dst_feats_path, dst_tar_file_path)
+
+# upload the tar to GCS in data_bucket at top level
+dst_tar_blob_path = extracted_feats_dataset_name + '.tar.gz'
+if not args.no_upload:
+    upload_blob(args.data_bucket, dst_tar_blob_path, dst_tar_file_path)
+
+# write outputs to provided output paths
+# @TODO this is currently going around kubeflow's built in mechanisms. Wasn't
+#       sure if a component outputPath could be read and delivered to downstream
+#       components as a string, int, etc, rather than as a file path. Figure out
+#       the right way to do this...
+# ensure dirs to output files exist
+Path(os.path.dirname(args.output_path_train_feats_tar_path)).mkdir(parents=True,
+        exist_ok=True)
+Path(os.path.dirname(args.output_path_test_feats_tar_path)).mkdir(parents=True,
+        exist_ok=True)
+# open and write
+with open(args.output_path_train_feats_tar_path, 'w') as f:
+    f.write(dst_tar_blob_path)
+with open(args.output_path_test_feats_tar_path, 'w') as f:
+    # @TODO Hook up extracted test features for even smaller footprint and
+    #       time-to-train on component startup
+    f.write(args.test_path)
 
 print(f"Finished in {time.time() - start_time} (s)")
 print(f"Extracted features saved to {dst_feats_path}")

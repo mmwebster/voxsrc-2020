@@ -7,6 +7,9 @@ from kubernetes import client as k8s_client
 preproc_op = comp.load_component_from_file(os.path.join(
     "./components/preproc/", 'preproc_component.yaml'))
 
+feature_extraction_op = comp.load_component_from_file(os.path.join(
+    "./components/feature-extractor/", 'feature_extractor_component.yaml'))
+
 train_op = comp.load_component_from_file(os.path.join(
     "./components/train/", 'train_component.yaml'))
 
@@ -30,21 +33,21 @@ def baseline_repro_pipeline(
     use_gpu = False
     run_id = '{{workflow.uid}}'
 
-    preproc_task = preproc_op(
+    feature_extraction_task = feature_extraction_op(
         data_bucket = data_bucket,
         test_list = test_list,
         train_list = train_list,
         test_path = test_path,
         train_path = train_path,
+        run_id = run_id
     )
 
-    # @TODO hook up preproc to train component
     train_task = train_op(
         data_bucket = data_bucket,
         test_list = test_list,
         train_list = train_list,
-        test_path = test_path,
-        train_path = train_path,
+        test_path = feature_extraction_task.outputs['test_feats_tar_path'],
+        train_path = feature_extraction_task.outputs['train_feats_tar_path'],
         batch_size = batch_size,
         max_epoch = max_epoch,
         checkpoint_bucket = checkpoint_bucket,
@@ -52,7 +55,7 @@ def baseline_repro_pipeline(
         n_speakers = n_speakers,
     )
 
-    train_task.after(preproc_task)
+    train_task.after(feature_extraction_task)
 
     # add Weights & Biases credentials
     if "WANDB_API_KEY" in os.environ:

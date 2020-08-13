@@ -23,5 +23,5 @@ python3 src/feature_extractor.py \
   --data-bucket=voxsrc-2020-voxceleb-v4 \
   --test_list=vox1_no_cuda.txt --train_list=vox2_no_cuda.txt \
   --test_path=vox1_no_cuda.tar.gz --train_path=vox2_no_cuda.tar.gz \
-  --batch_size=40 --nSpeakers=2 --max_epoch=2 --no-cuda \
+  --no-cuda \
   $@
