@@ -4,9 +4,6 @@ import kfp.components as comp
 import os
 from kubernetes import client as k8s_client
 
-preproc_op = comp.load_component_from_file(os.path.join(
-    "./components/preproc/", 'preproc_component.yaml'))
-
 feature_extraction_op = comp.load_component_from_file(os.path.join(
     "./components/feature-extractor/", 'feature_extractor_component.yaml'))
 
@@ -32,6 +29,7 @@ def baseline_repro_pipeline(
     #       Could be an issue of compute or IO performance. Currently 10 threads
     #       performs well on n1-standard-16
     feature_extraction_threads: int = 10,
+    reuse_run_with_id: str = "",
 ):
     use_preemptible = False
     use_gpu = False
@@ -44,7 +42,8 @@ def baseline_repro_pipeline(
         test_path = test_path,
         train_path = train_path,
         run_id = run_id,
-        num_threads = feature_extraction_threads
+        num_threads = feature_extraction_threads,
+        reuse_run_with_id = reuse_run_with_id
     ).set_cpu_request("9").set_cpu_limit("16")
 
     train_task = train_op(

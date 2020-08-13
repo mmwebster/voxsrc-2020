@@ -8,6 +8,7 @@ inputs:
   - {name: train_path, type: String}
   - {name: run_id, type: String}
   - {name: num_threads, type: Integer}
+  - {name: reuse_run_with_id, type: String}
 outputs:
 - {name: test_feats_tar_path, type: String}
 - {name: train_feats_tar_path, type: String}
@@ -23,6 +24,7 @@ implementation:
       --train_path, {inputValue: train_path},
       --run-id, {inputValue: run_id},
       --num-threads, {inputValue: num_threads},
+      --reuse-run-with-id, {inputValue: reuse_run_with_id},
 
       # @TODO Use outputPath mechanism instead of manual strings for GCS paths.
       #       Would require refactoring of local runs as well though
