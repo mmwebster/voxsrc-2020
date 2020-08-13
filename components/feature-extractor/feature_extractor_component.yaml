@@ -7,6 +7,7 @@ inputs:
   - {name: test_path, type: String}
   - {name: train_path, type: String}
   - {name: run_id, type: String}
+  - {name: num_threads, type: Integer}
 outputs:
 - {name: test_feats_tar_path, type: String}
 - {name: train_feats_tar_path, type: String}
@@ -21,6 +22,7 @@ implementation:
       --test_path, {inputValue: test_path},
       --train_path, {inputValue: train_path},
       --run-id, {inputValue: run_id},
+      --num-threads, {inputValue: num_threads},
 
       # @TODO Use outputPath mechanism instead of manual strings for GCS paths.
       #       Would require refactoring of local runs as well though

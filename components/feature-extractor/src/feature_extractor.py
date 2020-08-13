@@ -65,6 +65,7 @@ parser.add_argument('--set-seed', action='store_true');
 parser.add_argument('--no-upload', action='store_true')
 parser.add_argument('--output-path-test-feats-tar-path', type=str, default="./tmp/outputs/test_feats_tar_path")
 parser.add_argument('--output-path-train-feats-tar-path', type=str, default="./tmp/outputs/train_feats_tar_path")
+parser.add_argument('--num-threads', type=int, default=10)
 
 parser.add_argument('--checkpoint-bucket', type=str,
         default="voxsrc-2020-checkpoints-dev");
@@ -199,7 +200,8 @@ start_time = time.time()
 
 # init the feature extractor and run it
 with FeatureExtractor(train_list, train_path, dst_feats_path,
-        feature_extractor_fn) as feature_extractor:
+        feature_extractor_fn,
+        num_threads = args.num_threads) as feature_extractor:
     feature_extractor.run()
 
 # write arg parse params to metadata.txt

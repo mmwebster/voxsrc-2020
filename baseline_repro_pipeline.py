@@ -28,6 +28,10 @@ def baseline_repro_pipeline(
     batch_size: int = 5,
     max_epoch: int = 1,
     n_speakers: int = 2,
+    # @TODO Figure out why feat extraction is taking so much longer on GKE.
+    #       Could be an issue of compute or IO performance. Currently 10 threads
+    #       performs well on n1-standard-16
+    feature_extraction_threads: int = 10,
 ):
     use_preemptible = False
     use_gpu = False
@@ -39,8 +43,9 @@ def baseline_repro_pipeline(
         train_list = train_list,
         test_path = test_path,
         train_path = train_path,
-        run_id = run_id
-    )
+        run_id = run_id,
+        num_threads = feature_extraction_threads
+    ).set_cpu_request("9").set_cpu_limit("16")
 
     train_task = train_op(
         data_bucket = data_bucket,
