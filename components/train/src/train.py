@@ -129,6 +129,12 @@ wandb.init(project="voxsrc-2020-v1", config=args, id=args.run_id,
 
 train_list, test_list, train_path, test_path = [None, None, None, None]
 
+# make directories for tmp data
+if not(os.path.exists(args.save_tmp_data_to)):
+    os.makedirs(args.save_tmp_data_to)
+if not(os.path.exists(args.save_tmp_model_to)):
+    os.makedirs(args.save_tmp_model_to)
+
 ## Fetch data from GCS if enabled
 # @TODO replace these entire set of conditions with just a download, extract,
 #       and path setting. Skipping the fetch, and using an existing downloaded

@@ -76,12 +76,6 @@ def download_gcs_dataset(args):
     start = time.time()
     print("Downloading dataset blobs...")
 
-    # make directories for tmp data
-    if not(os.path.exists(args.save_tmp_data_to)):
-        os.makedirs(args.save_tmp_data_to)
-    if not(os.path.exists(args.save_tmp_model_to)):
-        os.makedirs(args.save_tmp_model_to)
-
     # compose blob names
     list_blobs = [args.train_list, args.test_list]
     data_blobs = [args.train_path, args.test_path]
