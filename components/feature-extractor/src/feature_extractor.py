@@ -44,25 +44,45 @@ parser = argparse.ArgumentParser(description = "Feature Extractor");
 
 # @note "tmp" denotes that this component output data will not be captured by
 #       the kubeflow pipeline or made available to downstream components
-parser.add_argument('--data-bucket', type=str)
-parser.add_argument('--save-tmp-data-to', type=str, default="./tmp/data/")
-parser.add_argument('--no-cuda', action='store_true');
-parser.add_argument('--set-seed', action='store_true');
-parser.add_argument('--no-upload', action='store_true')
-parser.add_argument('--output-path-test-feats-tar-path', type=str, default="./tmp/outputs/test_feats_tar_path")
-parser.add_argument('--output-path-train-feats-tar-path', type=str, default="./tmp/outputs/train_feats_tar_path")
-parser.add_argument('--num-threads', type=int, default=10)
+parser.add_argument('--data-bucket', type=str,
+        help="Name of GCS bucket to use for this run. E.g. voxsrc-2020-voxceleb-v4")
+parser.add_argument('--save-tmp-data-to', type=str, default="./tmp/data/",
+        help="Relative path to output data, temporarily stored on cluster, "
+             "permanenly written on local. E.g. ./tmp/data/")
+parser.add_argument('--no-cuda', action='store_true',
+        help="Flag to disable cuda for this run");
+parser.add_argument('--set-seed', action='store_true',
+        help="Flag to set a random seed for random, numpy.random, and torch");
+parser.add_argument('--no-upload', action='store_true',
+        help="Flag to disable upload of output artifacts to GCS "
+             "(speeds up local runs)")
+parser.add_argument('--output-path-test-feats-tar-path', type=str,
+        default="./tmp/outputs/test_feats_tar_path",
+        help="Path to file that stores the GCS output artifact path of test "
+             "features for cluster runs. There is no need to modify this.")
+parser.add_argument('--output-path-train-feats-tar-path', type=str,
+        default="./tmp/outputs/train_feats_tar_path",
+        help="Path to file that stores the GCS output artifact path of train "
+             "features for cluster runs. There is no need to modify this.")
+parser.add_argument('--num-threads', type=int, default=10,
+        help="The number of worker threads that the feature extractor uses to "
+             "boost IO-bound performance. E.g. 10")
 parser.add_argument('--reuse-run-with-id', type=str, default="",
         help="Execute the component in pass-through mode. Output all "
              "expected outputs, but using GCS artifacts from a previous run, "
-             "with the provided ID")
-parser.add_argument('--checkpoint-bucket', type=str,
-        default="voxsrc-2020-checkpoints-dev");
-parser.add_argument('--run-id', type=str, default=f"{gen_run_id()}");
-parser.add_argument('--train_list', type=str, help='Train list');
-parser.add_argument('--test_list',  type=str, help='Evaluation list');
-parser.add_argument('--train_path', type=str, default="voxceleb2", help='Absolute path to the train set');
-parser.add_argument('--test_path',  type=str, default="voxceleb1", help='Absolute path to the test set');
+             "with the provided ID. E.g. 1a373cca-7db8-4dd0-bec8-79a83041458b")
+parser.add_argument('--run-id', type=str, default=f"{gen_run_id()}",
+        help="Auto-generated unique run ID. There is no need to modify this.")
+parser.add_argument('--train_list', type=str,
+        help='GCS path to train list. E.g. vox2_no_cuda.txt');
+parser.add_argument('--test_list',  type=str,
+        help='GCS path to test list. E.g. vox1_no_cuda.txt');
+parser.add_argument('--train_path', type=str, default="voxceleb2",
+        help="GCS path to compressed train dataset with .tar.gz file extension. "
+             "E.g. vox2_no_cuda.tar.gz");
+parser.add_argument('--test_path',  type=str, default="voxceleb1",
+        help="GCS path to compressed test dataset with .tar.gz file extension. "
+             "E.g. vox1_no_cuda.tar.gz");
 
 args = parser.parse_args();
 
