@@ -14,8 +14,10 @@ import os
 from tqdm import tqdm
 import argparse
 import subprocess
+from pathlib import Path
+import time
 
-from data_fetch import download_gcs_blob_in_parallel, extract_tar, \
+from data_utils import download_gcs_blob_in_parallel, extract_tar, \
                      convert_aac_to_wav
 
 # Usage example:
@@ -37,6 +39,10 @@ parser.add_argument('--src-dataset', required=('--install-local-dataset' in sys.
 parser.add_argument('--dst-data-path', required=('--install-local-dataset' in sys.argv))
 parser.add_argument('--dst-list-path', required=('--install-local-dataset' in sys.argv))
 parser.add_argument('--dst-tmp-path', default="./")
+
+# generate a test_utterance_list from a test_path
+parser.add_argument('--generate-test-utterance-list', action='store_true')
+parser.add_argument('--test-path', required=('--generate-test-utterance-list' in sys.argv))
 
 # compress a dataset
 parser.add_argument('--compress', action='store_true', help="requires --dir=[path to directory to compress]")
@@ -182,6 +188,20 @@ elif args.install_local_dataset:
            "   ln -s ./datasets/vox1_no_cuda.txt ../components/train/tmp/data/vox1_no_cuda.txt\n"
            "   ln -s ./datasets/vox2_no_cuda.txt ../components/train/tmp/data/vox2_no_cuda.txt\n")
 
+# Example usage
+#   python utils.py --generate-test-utterance-list --test-path \
+#        datasets/vox1_no_cuda/
+elif args.generate_test_utterance_list:
+    print(f"Generating test utterance list from {args.test_path}")
+    start_time = time.time()
+
+    out_file_name = 'datasets/new_test_utterance_list.txt'
+    with open(out_file_name, 'w') as f:
+        for path in Path(args.test_path).rglob('*.wav'):
+            path_str = str(path).replace(args.test_path, '')
+            speaker_id = path_str.split('/')[0]
+            f.write(f"{speaker_id} {path_str}\n")
+    print(f"Wrote utterance list (in train data style) to {out_file_name} in {time.time() - start_time} (s)")
 
 else:
     print(f"Invalid 'action' param: {args.action}")
