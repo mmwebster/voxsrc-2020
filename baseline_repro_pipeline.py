@@ -31,8 +31,11 @@ def baseline_repro_pipeline(
     feature_extraction_threads: int = 10,
     reuse_run_with_id: str = "",
 ):
-    use_preemptible = False
-    use_gpu = False
+    train_settings = {
+        'use_preemptible': True,
+        'use_high_cpu': True,
+        'use_gpu': True,
+    }
     run_id = '{{workflow.uid}}'
 
     feature_extraction_task = feature_extraction_op(
@@ -68,17 +71,20 @@ def baseline_repro_pipeline(
     else:
         raise 'Error: No WandB API key set in environment'
 
+    if train_settings['use_high_cpu']:
+        train_task.set_cpu_request("9").set_cpu_limit("16")
+
     # @brief Require training to run on a preemtible node pool
     # @note This autoscales an autoscalable node pool from 0->1 that
     #       matches the corresponding config. Autoscaled nodes will be
     #       deactivated on GCP after 10 minutes of inactivity
-    if use_preemptible:
+    if train_settings['use_preemptible']:
         train_task\
             .apply(gcp.use_preemptible_nodepool(hard_constraint=True))\
             .set_retry(5)
 
     # @brief Select only a node pool with 1 Nvidia Tesla T4
-    if use_gpu:
+    if train_settings['use_gpu']:
         train_task\
             .set_gpu_limit(1)\
             .add_node_selector_constraint('cloud.google.com/gke-accelerator',
