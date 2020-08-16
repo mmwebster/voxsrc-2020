@@ -15,3 +15,4 @@ RUN pip install --upgrade --no-cache-dir google-cloud-storage
 # install ffmpeg audio compression tool
 RUN conda install -c conda-forge ffmpeg
 RUN conda install -c conda-forge parallel
+RUN conda install -c anaconda pigz
