@@ -29,13 +29,12 @@ def baseline_repro_pipeline(
     #       Could be an issue of compute or IO performance. Currently 10 threads
     #       performs well on n1-standard-16
     feature_extraction_threads: int = 10,
-    reuse_run_with_id: str = "",
+    reuse_run_with_id: str = "60cd49cd-9de3-4a67-8e93-4b9bde48669f",
 ):
-    train_settings = {
-        'use_preemptible': True,
-        'use_high_cpu': True,
-        'use_gpu': True,
-    }
+    # set prod_hw=True to enable production hardware (preemptible V100).
+    # Encountered odd issues when node resource constraints aren't known at
+    # "compile time" of kf pipeline file
+    prod_hw = False
     run_id = '{{workflow.uid}}'
 
     feature_extraction_task = feature_extraction_op(
@@ -47,7 +46,12 @@ def baseline_repro_pipeline(
         run_id = run_id,
         num_threads = feature_extraction_threads,
         reuse_run_with_id = reuse_run_with_id
-    ).set_cpu_request("9").set_cpu_limit("16")
+    )
+
+    # default feature extractor to high-perf pool if not in pass-through mode
+    # if in pass-through mode, there's no reason to use a beefy node
+    if not reuse_run_with_id:
+        feature_extraction_task.set_cpu_request("9").set_cpu_limit("16")
 
     train_task = train_op(
         data_bucket = data_bucket,
@@ -71,24 +75,19 @@ def baseline_repro_pipeline(
     else:
         raise 'Error: No WandB API key set in environment'
 
-    if train_settings['use_high_cpu']:
-        train_task.set_cpu_request("9").set_cpu_limit("16")
-
-    # @brief Require training to run on a preemtible node pool
-    # @note This autoscales an autoscalable node pool from 0->1 that
-    #       matches the corresponding config. Autoscaled nodes will be
+    # @note These resource requests autoscale an autoscalable node pool from
+    #       0->1 that matches the corresponding config. Autoscaled nodes will be
     #       deactivated on GCP after 10 minutes of inactivity
-    if train_settings['use_preemptible']:
+    if prod_hw:
+        # require training to run on a preemptible node pool
         train_task\
             .apply(gcp.use_preemptible_nodepool(hard_constraint=True))\
             .set_retry(5)
-
-    # @brief Select only a node pool with 1 Nvidia Tesla T4
-    if train_settings['use_gpu']:
+        # require training to run on a node with a gpu of type 'train_gpu_type'
         train_task\
             .set_gpu_limit(1)\
             .add_node_selector_constraint('cloud.google.com/gke-accelerator',
-                    'nvidia-tesla-t4')
+                    'nvidia-tesla-v100')
 
 # generate compressed pipeline file for upload
 if __name__ == '__main__':
