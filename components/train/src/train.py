@@ -148,7 +148,7 @@ if args.data_bucket is not None and not args.skip_data_fetch:
 
     # download, extract, transcode (compressed AAC->WAV) dataset
     download_gcs_dataset(args)
-    extract_gcs_dataset(args)
+    extract_gcs_dataset(args, use_pigz=True)
     # set new lists and data paths
     train_list, test_list, train_path, test_path \
         = set_loc_paths_from_gcs_dataset(args)

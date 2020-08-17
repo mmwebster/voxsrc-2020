@@ -116,7 +116,7 @@ if not args.reuse_run_with_id:
 
     # download, extract, transcode (compressed AAC->WAV) dataset
     download_gcs_dataset(args)
-    extract_gcs_dataset(args)
+    extract_gcs_dataset(args, use_pigz=True)
     transcode_gcs_dataset(args)
     # set new lists and data paths
     train_list, test_list, train_path, test_path \
@@ -178,7 +178,7 @@ if not args.reuse_run_with_id:
     # tar up the result
     dst_feats_path_without_trailing_slash = os.path.join(dst_feats_path, '')[:-1]
     dst_tar_file_path = dst_feats_path_without_trailing_slash + '.tar.gz'
-    compress_to_tar(dst_feats_path, dst_tar_file_path)
+    compress_to_tar(dst_feats_path, dst_tar_file_path, use_pigz=True)
 
     # upload the tar to GCS in data_bucket at top level
     dst_tar_blob_path = extracted_feats_dataset_name + '.tar.gz'

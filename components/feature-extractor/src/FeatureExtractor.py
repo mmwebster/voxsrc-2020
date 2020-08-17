@@ -7,6 +7,7 @@ import os
 import time
 import torch
 import subprocess
+import sys
 
 class FeatureExtractor():
     def __init__(self, src_list_path, src_data_path, dst_feats_path,
@@ -25,6 +26,7 @@ class FeatureExtractor():
         self.threads = []
         self.job_queue = queue.Queue(job_max_queue_size)
         self.done = False
+        self.error = False
 
     # start up threads on entering context
     def __enter__(self):
@@ -45,7 +47,7 @@ class FeatureExtractor():
         lines_processed = 0
         with open(self.src_list_path) as src_list:
             print(f"FeatureExtractor: Beginning to queue file paths")
-            while True:
+            while not self.error:
                 # grab a line in file
                 line = src_list.readline()
                 if not line:
@@ -53,12 +55,12 @@ class FeatureExtractor():
                 # extract the path to the utterance wav
                 utterance_wav_path_from_data_root = line.split()[1]
                 # queue it as a job
-                failed = True
-                while failed:
+                failed_to_queue = True
+                while failed_to_queue and not self.error:
                     try:
                         self.job_queue.put(utterance_wav_path_from_data_root,
                                 timeout=.1)
-                        failed = False
+                        failed_to_queue = False
                     except queue.Full:
                         print(f"FeatureExtractor: Timed out while queuing job")
                 lines_processed += 1
@@ -84,7 +86,8 @@ class FeatureExtractor():
             thread.join()
 
     def feature_extractor_thread(self, thread_index):
-        while not self.done or not self.job_queue.empty():
+        print(f"FeatureExtractor: Thread #{thread_index} starting")
+        while not self.error and not (self.done and self.job_queue.empty()):
             try:
                 # grab a job (path to utterance to proc), waiting if unavailable
                 utterance_wav_path_from_root = self.job_queue.get(timeout=.1)
@@ -101,6 +104,16 @@ class FeatureExtractor():
             except queue.Empty:
                 print(f"FeatureExtractor: Thread #{thread_index} timed out while"
                        " waiting for an utterance")
+            except FileNotFoundError:
+                print("FeatureExtractor: Utterance file not found. Killing "
+                      "workers. Did tar extraction fail?")
+                self.error = True
+            except:
+                print(f"FeatureExtractor: Unexpected exception. Killing workers. "
+                      f"Error: {sys.exc_info()[0]}")
+                self.error = True
+                raise
+        print(f"FeatureExtractor: Thread #{thread_index} stopping")
 
     # @TODO Need the torch tensor?
     def load_wav_from_file(self, utterance_wav_path):
