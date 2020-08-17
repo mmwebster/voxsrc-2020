@@ -70,7 +70,7 @@ parser.add_argument('--max_frames', type=int, default=200,  help='Input length t
 parser.add_argument('--batch_size', type=int, default=200,  help='Batch size');
 # ^^^ use --batch_size=30 for small datasets that can't fill an entire 200 speaker pair/triplet batch
 parser.add_argument('--max_seg_per_spk', type=int, default=100, help='Maximum number of utterances per speaker per epoch');
-parser.add_argument('--nDataLoaderThread', type=int, default=8, help='Number of loader threads');
+parser.add_argument('--n-data-loader-thread', type=int, default=10, help='Number of loader threads');
 
 ## Training details
 # @TODO disentangle learning rate decay from validation

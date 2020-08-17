@@ -10,7 +10,7 @@ import threading
 import time
 import math
 from scipy.io import wavfile
-from queue import Queue
+import queue
 
 def round_down(num, divisor):
     return num - (num%divisor)
@@ -86,9 +86,11 @@ def loadWAV(filename, max_frames, evalmode=True, num_eval=10):
     return feat;
 
 class DatasetLoader(object):
-    def __init__(self, dataset_file_name, batch_size, max_frames, max_seg_per_spk, nDataLoaderThread, gSize, new_train_path, maxQueueSize = 10, **kwargs):
+    def __init__(self, dataset_file_name, batch_size, max_frames,
+            max_seg_per_spk, n_data_loader_thread, gSize, new_train_path,
+            maxQueueSize = 10, **kwargs):
         self.dataset_file_name = dataset_file_name;
-        self.nWorkers = nDataLoaderThread;
+        self.n_workers = n_data_loader_thread;
         self.max_frames = max_frames;
         self.max_seg_per_spk = max_seg_per_spk;
         self.batch_size = batch_size;
@@ -100,14 +102,14 @@ class DatasetLoader(object):
         self.gSize  = gSize; ## number of clips per sample (e.g. 1 for softmax, 2 for triplet or pm)
 
         self.dataLoaders = [];
-        
+
         ### Read Training Files...
         with open(dataset_file_name) as dataset_file:
             while True:
                 line = dataset_file.readline();
                 if not line:
                     break;
-                
+
                 data = line.split();
                 speaker_name = data[0];
                 filename = os.path.join(new_train_path,data[1]);
@@ -118,20 +120,20 @@ class DatasetLoader(object):
                 self.data_dict[speaker_name].append(filename);
 
         ### Initialize Workers...
-        self.datasetQueue = Queue(self.maxQueueSize);
-    
+        self.datasetQueue = queue.Queue(self.maxQueueSize);
 
-    def dataLoaderThread(self, nThreadIndex):
-        
+    def next_batch_exists(self, batch_index):
+        return batch_index+self.batch_size <= self.nFiles
+
+    def data_loader_thread(self, nThreadIndex):
+
+        print(f"DatasetLoader: Starting worker thread #{nThreadIndex}")
         index = nThreadIndex*self.batch_size;
 
         if(index >= self.nFiles):
             return;
 
-        while(True):
-            if(self.datasetQueue.full() == True):
-                time.sleep(1.0);
-                continue;
+        while self.next_batch_exists(index):
 
             in_data = [];
             for ii in range(0,self.gSize):
@@ -147,15 +149,19 @@ class DatasetLoader(object):
                 in_data.append(torch.cat(feat, dim=0));
 
             in_label = np.asarray(self.data_label[index:index+self.batch_size]);
-            
-            self.datasetQueue.put([in_data, in_label]);
 
-            index += self.batch_size*self.nWorkers;
+            # try to enqueue batch until there's space
+            failed_to_queue = True
+            while failed_to_queue:
+                try:
+                    self.datasetQueue.put([in_data, in_label], timeout=.1)
+                    failed_to_queue = False
+                except queue.Full:
+                    continue
 
-            if(index+self.batch_size > self.nFiles):
-                break;
+            index += self.batch_size*self.n_workers;
 
-
+        print(f"DatasetLoader: Stopping worker thread #{nThreadIndex}")
 
     def __iter__(self):
 
@@ -196,36 +202,44 @@ class DatasetLoader(object):
         self.nFiles = len(self.data_label);
 
         ### Make and Execute Threads...
-        for index in range(0, self.nWorkers):
-            self.dataLoaders.append(threading.Thread(target = self.dataLoaderThread, args = [index]));
+        for index in range(0, self.n_workers):
+            self.dataLoaders.append(threading.Thread(target = self.data_loader_thread, args = [index]));
             self.dataLoaders[-1].start();
 
         return self;
 
+    # @brief Returns true if all workers are dead, false otherwise
+    def all_workers_dead(self):
+        all_workers_dead = True
+        for thread_index in range(self.n_workers):
+            if self.dataLoaders[thread_index].is_alive():
+                all_workers_dead = False
+                break
+        return all_workers_dead
+
+    def join_workers(self):
+        print(f"DatasetLoader: Joining against worker threads")
+        for thread_index in range(self.n_workers):
+            self.dataLoaders[thread_index].join()
 
     def __next__(self):
-
-        while(True):
-            isFinished = True;
-            
-            if(self.datasetQueue.empty() == False):
-                return self.datasetQueue.get();
-            for index in range(0, self.nWorkers):
-                if(self.dataLoaders[index].is_alive() == True):
-                    isFinished = False;
-                    break;
-
-            if(isFinished == False):
-                time.sleep(1.0);
-                continue;
-
-
-            for index in range(0, self.nWorkers):
-                self.dataLoaders[index].join();
-
-            self.dataLoaders = [];
-            raise StopIteration;
-
+        done = False
+        while not done:
+            try:
+                # grab a set of batches (might just be one batch, not sure)
+                return self.datasetQueue.get(timeout=.1)
+            except queue.Empty:
+                print("DatasetLoader: Timed out on fetching batch set from "
+                      "queue. Can the data loaders populate it fast enough?!")
+                # if all data loaders are dead, then the epoch is done
+                if self.all_workers_dead():
+                    print("DatasetLoader: All workers are dead.")
+                    done = True
+        # join against data loaders once the epoch has completed
+        self.join_workers()
+        # clear data loaders, and stop the iterations
+        self.dataLoaders = [];
+        raise StopIteration;
 
     def __call__(self):
         pass;
