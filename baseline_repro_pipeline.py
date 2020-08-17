@@ -4,6 +4,9 @@ import kfp.components as comp
 import os
 from kubernetes import client as k8s_client
 
+feature_extraction_op = comp.load_component_from_file(os.path.join(
+    "./components/feature-extractor/", 'feature_extractor_component.yaml'))
+
 train_op = comp.load_component_from_file(os.path.join(
     "./components/train/", 'train_component.yaml'))
 
@@ -22,23 +25,41 @@ def baseline_repro_pipeline(
     batch_size: int = 5,
     max_epoch: int = 1,
     n_speakers: int = 2,
+    # @TODO Figure out why feat extraction is taking so much longer on GKE.
+    #       Could be an issue of compute or IO performance. Currently 10 threads
+    #       performs well on n1-standard-16
+    feature_extraction_threads: int = 10,
+    reuse_run_with_id: str = "",
 ):
     use_preemptible = False
     use_gpu = False
     run_id = '{{workflow.uid}}'
 
-    train_task = train_op(
+    feature_extraction_task = feature_extraction_op(
         data_bucket = data_bucket,
         test_list = test_list,
         train_list = train_list,
         test_path = test_path,
         train_path = train_path,
+        run_id = run_id,
+        num_threads = feature_extraction_threads,
+        reuse_run_with_id = reuse_run_with_id
+    ).set_cpu_request("9").set_cpu_limit("16")
+
+    train_task = train_op(
+        data_bucket = data_bucket,
+        test_list = test_list,
+        train_list = train_list,
+        test_path = feature_extraction_task.outputs['test_feats_tar_path'],
+        train_path = feature_extraction_task.outputs['train_feats_tar_path'],
         batch_size = batch_size,
         max_epoch = max_epoch,
         checkpoint_bucket = checkpoint_bucket,
         run_id = run_id,
         n_speakers = n_speakers,
     )
+
+    train_task.after(feature_extraction_task)
 
     # add Weights & Biases credentials
     if "WANDB_API_KEY" in os.environ:

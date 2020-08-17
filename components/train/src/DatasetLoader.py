@@ -2,7 +2,7 @@
 # -*- encoding: utf-8 -*-
 
 import torch
-import numpy
+import numpy as np
 import random
 import pdb
 import os
@@ -15,35 +15,72 @@ from queue import Queue
 def round_down(num, divisor):
     return num - (num%divisor)
 
+# @brief extract a random subset of contiguous frames from a spectrogram as a
+#        numpy array
+# @param spectrogram 3-dim numpy array containing spectrogram. 2nd axis is
+#        frequency, 3rd axis it time, 1st axis is a trivial 1-long list
+# @note Not sure why the trivial 1st dimension is necessary but training code
+#       expects this 3-dim spectrogram
+def extract_subset_of_spectrogram(spectrogram, desired_frames):
+    # actual length of audio segment
+    actual_frames = spectrogram.shape[2]
+    #print(f"spectrogram dims are {spectrogram.shape}")
+
+    padded_spectrogram = spectrogram
+    # zero-pad audio segment if it's smaller than desired
+    # @TODO How will the network respond to padded spectrograms? (original
+    #       source padded the time-domain audio)
+    if actual_frames < desired_frames:
+        num_frequencies = spectrogram.shape[1]
+        # create zeros of desired shape
+        padded_spectrogram = np.zeros((1, desired_frames, num_frequencies))
+        # insert original data
+        padded_spectrogram[:, :spectrogram.shape[1],:spectrogram.shape[2]] = spectrogram
+
+    # select a random start frames of subset
+    start_frame = np.int64(random.random()*(actual_frames-desired_frames))
+    #print(f"start frame is {start_frame}, ")
+
+    # return 'desired_frames'-long subset of audio segment
+    return padded_spectrogram[:,:,int(start_frame):int(start_frame)+desired_frames]
+
+
+# @brief read WAV file and convert to torch tensor
+# @credit clovaai/voxceleb_trainer
 def loadWAV(filename, max_frames, evalmode=True, num_eval=10):
 
-    # Maximum audio length
-    max_audio = max_frames * 160 + 240
+    # desired length of audio segment
+    desired_audio_length = max_frames * 160 + 240
 
     # Read wav file and convert to torch tensor
     sample_rate, audio  = wavfile.read(filename)
 
-    audiosize = audio.shape[0]
+    # actual length of audio segment
+    actual_audio_length = audio.shape[0]
 
-    if audiosize <= max_audio:
-        shortage    = math.floor( ( max_audio - audiosize + 1 ) / 2 )
-        audio       = numpy.pad(audio, (shortage, shortage), 'constant', constant_values=0)
-        audiosize   = audio.shape[0]
+    # zero-pad audio segment if it's smaller than desired
+    if actual_audio_length <= desired_audio_length:
+        shortage    = math.floor( ( desired_audio_length - actual_audio_length + 1 ) / 2 )
+        audio       = np.pad(audio, (shortage, shortage), 'constant', constant_values=0)
+        actual_audio_length   = audio.shape[0]
 
+    # set deterministic or random initial frame based on eval/not eval
     if evalmode:
-        startframe = numpy.linspace(0,audiosize-max_audio,num=num_eval)
+        startframe = np.linspace(0,actual_audio_length-desired_audio_length,num=num_eval)
     else:
-        startframe = numpy.array([numpy.int64(random.random()*(audiosize-max_audio))])
-    
+        startframe = np.array([np.int64(random.random()*(actual_audio_length-desired_audio_length))])
+
+    # grab 'desired_audio_length'-long subset of audio segment
     feats = []
     if evalmode and max_frames == 0:
         feats.append(audio)
     else:
+        # @TODO Why is startframe an array? Currently iterating through 1 element...
         for asf in startframe:
-            feats.append(audio[int(asf):int(asf)+max_audio])
+            feats.append(audio[int(asf):int(asf)+desired_audio_length])
 
-    feat = numpy.stack(feats,axis=0)
-
+    # load into torch float tensor
+    feat = np.stack(feats,axis=0)
     feat = torch.FloatTensor(feat)
 
     return feat;
@@ -102,10 +139,14 @@ class DatasetLoader(object):
                 for ij in range(index,index+self.batch_size):
                     # @note if there aren't enough independent
                     #       speakers, the batch won't be fillable
-                    feat.append(loadWAV(self.data_list[ij][ii], self.max_frames, evalmode=False));
+                    # @note casting pre-extracted float16 features to float32 so
+                    #       as to not inadvertently introduce network quantization
+                    full_spectrogram = np.load(self.data_list[ij][ii].replace(".wav", ".npy")).astype('float32')
+                    subset_spectrogram = extract_subset_of_spectrogram(full_spectrogram, self.max_frames)
+                    feat.append(torch.FloatTensor(subset_spectrogram));
                 in_data.append(torch.cat(feat, dim=0));
 
-            in_label = numpy.asarray(self.data_label[index:index+self.batch_size]);
+            in_label = np.asarray(self.data_label[index:index+self.batch_size]);
             
             self.datasetQueue.put([in_data, in_label]);
 
@@ -131,13 +172,13 @@ class DatasetLoader(object):
             data    = self.data_dict[key]
             numSeg  = round_down(min(len(data),self.max_seg_per_spk),self.gSize)
             
-            rp      = lol(numpy.random.permutation(len(data))[:numSeg],self.gSize)
+            rp      = lol(np.random.permutation(len(data))[:numSeg],self.gSize)
             flattened_label.extend([findex] * (len(rp)))
             for indices in rp:
                 flattened_list.append([data[i] for i in indices])
 
         ## Data in random order
-        mixid           = numpy.random.permutation(len(flattened_label))
+        mixid           = np.random.permutation(len(flattened_label))
         mixlabel        = []
         mixmap          = []
 

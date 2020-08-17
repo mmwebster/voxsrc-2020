@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy, math, pdb, sys, random
 import time, os, itertools, shutil, importlib
-from tuneThreshold import tuneThresholdfromScore
+from baseline_misc.tuneThreshold import tuneThresholdfromScore
 from DatasetLoader import loadWAV
 from loss.ge2e import GE2ELoss
 from loss.angleproto import AngleProtoLoss
@@ -27,8 +27,10 @@ class SpeakerNet(nn.Module):
 
         self.device = device
 
+        # grab actual model version
         SpeakerNetModel = importlib.import_module('models.'+model).__getattribute__(model)
-        # @TODO make cuda optional in order to train on dev machines w/o GPUs
+
+        # set model as __S__ member
         self.__S__ = SpeakerNetModel(**argsdict).to(self.device);
 
         if trainfunc == 'angleproto':

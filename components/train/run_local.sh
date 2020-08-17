@@ -10,6 +10,7 @@
 #                   ID. This automatically happens when kubeflow runs
 #                   are preempted, but must be manually passed for runs
 #                   outside of kubeflow.
+# @param --set-seed For deterministic, reproducible tests
 # @note Flags for the "small" dataset:
 #         --test_list=vox1_test_list_small.txt \
 #         --train_list=vox2_train_list_small.txt \
@@ -20,9 +21,9 @@
 export VOX_COMMON_SRC_DIR="../../common/src/"
 
 # run the component workload
-python3 src/trainSpeakerNet.py \
+python3 src/train.py \
   --data-bucket=voxsrc-2020-voxceleb-v4 \
   --test_list=vox1_no_cuda.txt --train_list=vox2_no_cuda.txt \
-  --test_path=vox1_no_cuda.tar.gz --train_path=vox2_no_cuda.tar.gz \
+  --test_path=vox1_no_cuda.tar.gz --train_path=vox2_no_cuda_feats.tar.gz \
   --batch_size=5 --nSpeakers=2 --max_epoch=2 \
   $@

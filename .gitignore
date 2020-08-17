@@ -4,5 +4,7 @@ data/datasets
 data/tars
 *.tar.gz
 __pycache__
+.DS_Store
+.ipynb_checkpoints
 wandb
 build

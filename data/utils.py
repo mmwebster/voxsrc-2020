@@ -1,5 +1,8 @@
 #!/usr/bin/python3
 
+# @TODO clean up naming to distinuish this dev environment dataset utilities
+#       file from the component source data utilities for the actual ML pipeline
+
 import sys
 
 # Add common src dir to python import path (varies between runs on and
