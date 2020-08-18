@@ -10,18 +10,13 @@
 #                   ID. This automatically happens when kubeflow runs
 #                   are preempted, but must be manually passed for runs
 #                   outside of kubeflow.
-# @note Flags for the "small" dataset:
-#         --test_list=vox1_test_list_small.txt \
-#         --train_list=vox2_train_list_small.txt \
-#         --test_path=voxceleb1-small-wav.tar.gz \
-#         --train_path=voxceleb2-small-m4a.tar.gz
 # set common source dir (build_image.sh does something similar)
 export VOX_COMMON_SRC_DIR="../../common/src/"
 
 # run the component workload
 python3 src/feature_extractor.py \
   --data-bucket=voxsrc-2020-voxceleb-v4 \
-  --test_list=vox1_no_cuda.txt --train_list=vox2_no_cuda.txt \
+  --test_utterances_list=vox1_no_cuda_utterances.txt --train_list=vox2_no_cuda.txt \
   --test_path=vox1_no_cuda.tar.gz --train_path=vox2_no_cuda.tar.gz \
-  --no-cuda \
+  --no-cuda\
   $@

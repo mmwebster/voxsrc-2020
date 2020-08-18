@@ -18,6 +18,10 @@ train_op = comp.load_component_from_file(os.path.join(
 def baseline_repro_pipeline(
     data_bucket: str = 'voxsrc-2020-voxceleb-v4',
     test_list: str = 'vox1_no_cuda.txt',
+    # @note test_utterances_list is in the same format as train_list, but for
+    #       the test data. Whereas test_list contains utterance pairs for
+    #       evaluation
+    test_utterances_list: str = 'vox1_no_cuda_utterances.txt',
     train_list: str = 'vox2_no_cuda.txt',
     test_path: str = 'vox1_no_cuda.tar.gz',
     train_path: str = 'vox2_no_cuda.tar.gz',
@@ -37,7 +41,7 @@ def baseline_repro_pipeline(
 
     feature_extraction_task = feature_extraction_op(
         data_bucket = data_bucket,
-        test_list = test_list,
+        test_utterances_list = test_list,
         train_list = train_list,
         test_path = test_path,
         train_path = train_path,

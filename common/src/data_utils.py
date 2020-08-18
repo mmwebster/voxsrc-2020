@@ -72,18 +72,13 @@ def download_gcs_blob_in_parallel(src_bucket, src_file_path,
 
 # @brief Collection of functions for downloading, extracting, and
 #        transcoding/uncompressing a dataset stored on GCS
-def download_gcs_dataset(args):
+def download_gcs_dataset(bucket, save_path, blobs):
     start = time.time()
     print("Downloading dataset blobs...")
 
-    # compose blob names
-    list_blobs = [args.train_list, args.test_list]
-    data_blobs = [args.train_path, args.test_path]
-    blobs = list_blobs + data_blobs
-
     # download each blob
     for blob in blobs:
-        dst = os.path.join(args.save_tmp_data_to, blob)
+        dst = os.path.join(save_path, blob)
         # @TODO get gsutil working in a docker container in order to
         #       perform parallel composite downloads, which apparently
         #       are not supported by the python client
@@ -94,7 +89,7 @@ def download_gcs_dataset(args):
             print(f"Skipping pre-downloaded blob: {dst}")
         else:
             print(f"Downloading blob: {dst}")
-            download_blob(args.data_bucket, blob, dst)
+            download_blob(bucket, blob, dst)
     print(f"...Finished in {time.time() - start} (s)")
 
 # @brief New, better, dataset extractor. Takes an input path to a tar
@@ -233,16 +228,14 @@ def transcode_gcs_dataset(args):
 
     print(f"...Finished in {time.time() - start} (s)")
 
-def set_loc_paths_from_gcs_dataset(args):
-    # set new lists and data paths
-    train_list = os.path.join(args.save_tmp_data_to, args.train_list)
-    test_list = os.path.join(args.save_tmp_data_to, args.test_list)
-    # @note remove the .tar.gz to reference extracted directories
-    train_path = os.path.join(args.save_tmp_data_to,
-            args.train_path.split(".tar.gz")[0])
-    test_path = os.path.join(args.save_tmp_data_to,
-            args.test_path.split(".tar.gz")[0])
-    return train_list, test_list, train_path, test_path
+# @brief Returns local paths to downloaded data, in the same order as recieved.
+#        Just prepends data_path to all blobs and removes the tar.gz
+def get_loc_paths_from_gcs_dataset(save_path, blobs):
+    out_paths = []
+    for blob in blobs:
+        no_tar = blob.split(".tar.gz")[0]
+        out_paths.append(os.path.join(save_path, no_tar))
+    return out_paths
 
 # @brief Compress a directory into a tar file. Usage includes compressing
 #        extracted feature directory
