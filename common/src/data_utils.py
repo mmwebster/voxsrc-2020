@@ -107,9 +107,7 @@ def extract_tar(src_tar_path, dst_extract_path, use_pigz=False):
 
     with open(os.devnull, 'w') as FNULL:
         if use_pigz:
-            cmd = f"tar -C {dst_extract_path} -I pigz -xf {src_tar_path}"
-            print(f"{cmd}")
-            subprocess.call(cmd,
+            subprocess.call(f"tar -C {dst_extract_path} -I pigz -xf {src_tar_path}",
                     shell=True)
         else:
             subprocess.call(f"tar -C {dst_extract_path} -zxf {src_tar_path}",
@@ -141,9 +139,7 @@ def extract_gcs_dataset(args, use_pigz=False):
             else:
                 print(f"Extracting file {src} into {dst_dir_name}")
                 if uses_pigz[index]:
-                    cmd = f"tar -C {dst} -I pigz -xf {src}"
-                    print(f"{cmd}")
-                    subprocess.call(cmd, shell=True)
+                    subprocess.call(f"tar -C {dst} -I pigz -xf {src}", shell=True)
                 else:
                     subprocess.call(f"tar -C {dst} -zxf {src}", shell=True)
 
@@ -272,7 +268,6 @@ def compress_to_tar(src_dir_path, dst_file_path, use_pigz=False):
     cmd = None
     if use_pigz:
         cmd = f"tar -C {src_dir_parent_path} -I pigz -cf {dst_file_path} {src_dir_name}"
-        print(f"{cmd}")
     else:
         cmd = f"tar -C {src_dir_parent_path} -zcf {dst_file_path} {src_dir_name}"
     subprocess.call(cmd, shell=True)
