@@ -20,7 +20,7 @@ import subprocess
 import time
 from pathlib import Path
 from data_utils import download_gcs_dataset, extract_gcs_dataset, \
-                     transcode_gcs_dataset, set_loc_paths_from_gcs_dataset,\
+                     transcode_gcs_dataset, get_loc_paths_from_gcs_dataset,\
                      download_blob, upload_blob
 import yaml
 import pwd
@@ -147,16 +147,19 @@ if args.data_bucket is not None and not args.skip_data_fetch:
     #       in common/src/data_utils.py
 
     # download, extract, transcode (compressed AAC->WAV) dataset
-    download_gcs_dataset(args)
+    blobs = [args.train_list, args.test_list, args.train_path,
+            args.test_path]
+    download_gcs_dataset(args.data_bucket, args.save_tmp_data_to, blobs)
+    # @TODO make extract_gcs_dataset take blob names as well
     extract_gcs_dataset(args, use_pigz=True)
     # set new lists and data paths
     train_list, test_list, train_path, test_path \
-        = set_loc_paths_from_gcs_dataset(args)
+        = get_loc_paths_from_gcs_dataset(args.save_tmp_data_to, blobs)
 elif args.data_bucket is not None and args.skip_data_fetch:
     print("Skipping GCS data fetch")
     # dataset from GCS already available; set new lists and data paths
     train_list, test_list, train_path, test_path \
-        = set_loc_paths_from_gcs_dataset(args)
+        = get_loc_paths_from_gcs_dataset(args)
 else:
     print("Using local, permanent dataset")
     # pass through to use permanent local dataset
