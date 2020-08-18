@@ -14,9 +14,18 @@
 export VOX_COMMON_SRC_DIR="../../common/src/"
 
 # run the component workload
+# "no_cuda" dataset
 python3 src/feature_extractor.py \
   --data-bucket=voxsrc-2020-voxceleb-v4 \
   --test_utterances_list=vox1_no_cuda_utterances.txt --train_list=vox2_no_cuda.txt \
   --test_path=vox1_no_cuda.tar.gz --train_path=vox2_no_cuda.tar.gz \
   --no-cuda\
   $@
+
+## "full" dataset
+#python3 src/feature_extractor.py \
+#  --data-bucket=voxsrc-2020-voxceleb-v4 \
+#  --test_utterances_list=vox1_full_utterances.txt --train_list=vox2_full.txt \
+#  --test_path=vox1_full.tar.gz --train_path=vox2_full.tar.gz \
+#  --no-cuda\
+#  $@

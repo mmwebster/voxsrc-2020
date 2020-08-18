@@ -33,7 +33,8 @@ def baseline_repro_pipeline(
     #       Could be an issue of compute or IO performance. Currently 10 threads
     #       performs well on n1-standard-16
     feature_extraction_threads: int = 10,
-    reuse_run_with_id: str = "60cd49cd-9de3-4a67-8e93-4b9bde48669f",
+    # @note This run contains no_cuda pre-extracted features for vox1 and vox2
+    reuse_run_with_id: str = "milo_webster-240asznq",
 ):
     # set prod_hw=True to enable production hardware (preemptible V100).
     # Encountered odd issues when node resource constraints aren't known at
