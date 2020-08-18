@@ -15,75 +15,63 @@ import queue
 def round_down(num, divisor):
     return num - (num%divisor)
 
-# @brief extract a random subset of contiguous frames from a spectrogram as a
-#        numpy array
+# @brief Zero pad spectrogram in frequency domain if its length is below padded_length
+# @TODO How will the network respond to padded spectrograms? (original
+#       implementation padded the time-domain audio)
+def pad_spectrogram(spectrogram, min_frames):
+    actual_frames = spectrogram.shape[2]
+    if actual_frames < min_frames:
+        num_frequencies = spectrogram.shape[1]
+        # create zeros of desired shape
+        padded_spectrogram = np.zeros((1, min_frames, num_frequencies))
+        # insert original data and return
+        padded_spectrogram[:, :spectrogram.shape[1],:spectrogram.shape[2]] = spectrogram
+        return padded_spectrogram
+    else:
+        return spectrogram
+
+# @brief extract a random or deterministic subset of contiguous frames from a
+#        spectrogram as a numpy array
 # @param spectrogram 3-dim numpy array containing spectrogram. 2nd axis is
 #        frequency, 3rd axis it time, 1st axis is a trivial 1-long list
 # @note Not sure why the trivial 1st dimension is necessary but training code
 #       expects this 3-dim spectrogram
+# @note desired_frames was previously named "max_frames", as somewhat of a
+#       misnomer. Utterances with insufficient length would be zero-padding in
+#       time domain, but it still was the actual number of spectrogram frames
+#       always returned, not a max for a range
 def extract_subset_of_spectrogram(spectrogram, desired_frames):
-    # actual length of audio segment
+    # pad if too small for network dims
+    padded_spectrogram = pad_spectrogram(spectrogram, desired_frames)
+
+    # select a random start frame of subset
     actual_frames = spectrogram.shape[2]
-    #print(f"spectrogram dims are {spectrogram.shape}")
-
-    padded_spectrogram = spectrogram
-    # zero-pad audio segment if it's smaller than desired
-    # @TODO How will the network respond to padded spectrograms? (original
-    #       source padded the time-domain audio)
-    if actual_frames < desired_frames:
-        num_frequencies = spectrogram.shape[1]
-        # create zeros of desired shape
-        padded_spectrogram = np.zeros((1, desired_frames, num_frequencies))
-        # insert original data
-        padded_spectrogram[:, :spectrogram.shape[1],:spectrogram.shape[2]] = spectrogram
-
-    # select a random start frames of subset
     start_frame = np.int64(random.random()*(actual_frames-desired_frames))
-    #print(f"start frame is {start_frame}, ")
 
     # return 'desired_frames'-long subset of audio segment
     return padded_spectrogram[:,:,int(start_frame):int(start_frame)+desired_frames]
 
+# @brief Extracts n_subsets of overlapping desired_frames length. Each subset's offset
+#        from the previous frame is dependent on its total length and the number
+#        of subsets
+def extract_eval_subsets_from_spectrogram(spectrogram, desired_frames, n_subsets = 10):
+    # pad if too small for network dims
+    padded_spectrogram = pad_spectrogram(spectrogram, desired_frames)
 
-# @brief read WAV file and convert to torch tensor
-# @credit clovaai/voxceleb_trainer
-def loadWAV(filename, max_frames, evalmode=True, num_eval=10):
+    # make list of overlapping n_subsets start frames spanning the entire utterance
+    actual_frames = spectrogram.shape[2]
+    start_frames = np.linspace(0, actual_frames - desired_frames, n_subsets)
 
-    # desired length of audio segment
-    desired_audio_length = max_frames * 160 + 240
+    # append each utterance subset
+    utterance_subsets = []
+    for start_frame in start_frames:
+        # @note appending the first element in first axis in order to get a list
+        #       of NxM tensors, rather than 1xNxM
+        utterance_subsets.append(padded_spectrogram[0,:,
+            int(start_frame):int(start_frame)+desired_frames])
 
-    # Read wav file and convert to torch tensor
-    sample_rate, audio  = wavfile.read(filename)
-
-    # actual length of audio segment
-    actual_audio_length = audio.shape[0]
-
-    # zero-pad audio segment if it's smaller than desired
-    if actual_audio_length <= desired_audio_length:
-        shortage    = math.floor( ( desired_audio_length - actual_audio_length + 1 ) / 2 )
-        audio       = np.pad(audio, (shortage, shortage), 'constant', constant_values=0)
-        actual_audio_length   = audio.shape[0]
-
-    # set deterministic or random initial frame based on eval/not eval
-    if evalmode:
-        startframe = np.linspace(0,actual_audio_length-desired_audio_length,num=num_eval)
-    else:
-        startframe = np.array([np.int64(random.random()*(actual_audio_length-desired_audio_length))])
-
-    # grab 'desired_audio_length'-long subset of audio segment
-    feats = []
-    if evalmode and max_frames == 0:
-        feats.append(audio)
-    else:
-        # @TODO Why is startframe an array? Currently iterating through 1 element...
-        for asf in startframe:
-            feats.append(audio[int(asf):int(asf)+desired_audio_length])
-
-    # load into torch float tensor
-    feat = np.stack(feats,axis=0)
-    feat = torch.FloatTensor(feat)
-
-    return feat;
+    # return stacked 3d tensor instead of list of 3d tensors
+    return np.stack(utterance_subsets, axis=0)
 
 class DatasetLoader(object):
     def __init__(self, dataset_file_name, batch_size, max_frames,

@@ -82,6 +82,7 @@ parser.add_argument('--optimizer', type=str, default="adam", help='sgd or adam')
 
 ## Learning rates
 parser.add_argument('--lr', type=float, default=0.001,      help='Learning rate');
+parser.add_argument('--lr_decay_interval', type=int, default=10, help='Reduce the learning rate every [lr_decay_interval] epochs');
 parser.add_argument("--lr_decay", type=float, default=0.95, help='Learning rate decay every [test_interval] epochs');
 
 ## Loss functions
@@ -244,7 +245,7 @@ if(args.initial_model != ""):
     print("Model %s loaded!"%args.initial_model);
 
 for ii in range(0,it-1):
-    if ii % args.test_interval == 0:
+    if ii % args.lr_decay_interval == 0:
         clr = s.updateLearningRate(args.lr_decay) 
 
 ## Evaluation code
@@ -290,7 +291,7 @@ while(1):
 
     wandb_log.update({'epoch': it, 'loss': loss, 'train_EER': traineer})
 
-    ## Validate, save, update learning rate
+    # validate and save model
     if it % args.test_interval == 0:
         print(time.strftime("%Y-%m-%d %H:%M:%S"), it, "Evaluating...");
 
@@ -303,24 +304,14 @@ while(1):
 
         scorefile.flush()
 
-        clr = s.updateLearningRate(args.lr_decay) 
-
-
-        ## touch the output file/dir
-        #Path(args.save_tmp_model_to).parent.mkdir(parents=True, exist_ok=True)
-        #with open(args.save_tmp_model_to, 'w') as eerfile:
-        #    eerfile.write(f"model iter: {it}")
-        #    eerfile.write('%.4f'%result[1])
-
         eerfile = open(args.save_tmp_model_to+"/model%09d.eer"%it, 'w')
         eerfile.write('%.4f'%result[1])
         eerfile.close()
         ret = '%.4f'%result[1]
 
-        wandb_log.update({'lr': clr, 'val_EER': result[1]})
+        wandb_log.update({'val_EER': result[1]})
 
     else:
-
         print(time.strftime("%Y-%m-%d %H:%M:%S"), "LR %f, TEER %2.2f, TLOSS %f"%( max(clr), traineer, loss));
         scorestuff = "IT %d, LR %f, TEER %2.2f, TLOSS %f\n"%(it, max(clr), traineer, loss)
         scorefile.write(scorestuff);
@@ -329,6 +320,11 @@ while(1):
             model_save_file.write(f"[model] ret={scorestuff}\n")
 
         scorefile.flush()
+
+
+    if it % args.lr_decay_interval == 0:
+        clr = s.updateLearningRate(args.lr_decay)
+        wandb_log.update({'lr': clr})
 
     wandb.log(wandb_log)
 

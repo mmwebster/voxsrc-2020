@@ -4,10 +4,11 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy, math, pdb, sys, random
+import math, pdb, sys, random
+import numpy as np
 import time, os, itertools, shutil, importlib
 from baseline_misc.tuneThreshold import tuneThresholdfromScore
-from DatasetLoader import loadWAV
+from DatasetLoader import extract_eval_subsets_from_spectrogram
 from loss.ge2e import GE2ELoss
 from loss.angleproto import AngleProtoLoss
 from loss.cosface import AMSoftmax
@@ -194,10 +195,16 @@ class SpeakerNet(nn.Module):
 
         ## Save all features to file
         for idx, file in enumerate(setfiles):
+            # extract Subsets x Freq x Frames tensor from a single utterance in
+            # evaluation set for evaluation features
+            utterance_file_path = os.path.join(test_path,file).replace(".wav", ".npy")
+            full_utterance_spectrogram = np.load(utterance_file_path).astype('float32')
+            overlapping_spectrogram_subsets = torch.FloatTensor(
+                    extract_eval_subsets_from_spectrogram(
+                        full_utterance_spectrogram, self.__max_frames__)).to(self.device)
 
-            inp1 = loadWAV(os.path.join(test_path,file), self.__max_frames__, evalmode=True, num_eval=num_eval).to(self.device)
-
-            ref_feat = self.__S__.forward(inp1).detach().cpu()
+            ref_feat = self.__S__.forward(
+                    overlapping_spectrogram_subsets).detach().cpu()
 
             filename = '%06d.wav'%idx
 
@@ -235,7 +242,7 @@ class SpeakerNet(nn.Module):
 
             dist = F.pairwise_distance(ref_feat.unsqueeze(-1).expand(-1,-1,num_eval), com_feat.unsqueeze(-1).expand(-1,-1,num_eval).transpose(0,2)).detach().cpu().numpy();
 
-            score = -1 * numpy.mean(dist);
+            score = -1 * np.mean(dist);
 
             all_scores.append(score);  
             all_labels.append(int(data[0]));
