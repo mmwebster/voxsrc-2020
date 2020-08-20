@@ -253,7 +253,9 @@ for ii in range(0,it-1):
 
 ## Evaluation code
 if args.eval == True:
-    sc, lab = s.evaluateFromListSave(test_list, print_interval=100, feat_dir=args.save_tmp_feats_to, test_path=test_path)
+    sc, lab = s.evaluateFromListSave(test_list, print_interval_percent=10,
+                                     feat_dir=args.save_tmp_feats_to,
+                                     test_path=test_path)
     result = tuneThresholdfromScore(sc, lab, [1, 0.1]);
     print('EER %2.4f'%result[1])
 
@@ -296,8 +298,9 @@ while(1):
     if it % args.test_interval == 0:
         print(time.strftime("%Y-%m-%d %H:%M:%S"), it, "Evaluating...");
 
-        sc, lab = s.evaluateFromListSave(test_list, print_interval=100,
-                feat_dir=args.save_tmp_feats_to, test_path=test_path)
+        sc, lab = s.evaluateFromListSave(test_list, print_interval_percent=10,
+                                         feat_dir=args.save_tmp_feats_to,
+                                         test_path=test_path)
         result = tuneThresholdfromScore(sc, lab, [1, 0.1]);
 
         print(time.strftime("%Y-%m-%d %H:%M:%S"), "LR %f, TEER/T1 %2.2f, TLOSS %f, VEER %2.4f"%( max(clr), traineer, loss, result[1]));

@@ -110,6 +110,9 @@ class DatasetLoader(object):
         ### Initialize Workers...
         self.datasetQueue = queue.Queue(self.maxQueueSize);
 
+    def __len__(self):
+        return self.nFiles
+
     def next_batch_exists(self, batch_index):
         return batch_index+self.batch_size <= self.nFiles
 

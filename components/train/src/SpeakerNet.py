@@ -94,8 +94,15 @@ class SpeakerNet(nn.Module):
         top1    = 0     # EER or accuracy
 
         criterion = torch.nn.CrossEntropyLoss()
-        
+
+        print_interval_percent = 10
+        new_print_interval = 0
         for data, data_label in loader:
+            if new_print_interval == 0:
+                num_batches = (len(loader)/loader.batch_size)
+                new_print_interval = int(num_batches*print_interval_percent/100)
+                print(f"SpeakerNet: Starting training @ {print_interval_percent}%"
+                      f" update interval")
 
             tstart = time.time()
 
@@ -124,13 +131,15 @@ class SpeakerNet(nn.Module):
 
             telapsed = time.time() - tstart
 
-            sys.stdout.write("\rProcessing (%d/%d) "%(index, loader.nFiles));
-            sys.stdout.write("Loss %f EER/T1 %2.3f%% - %.2f Hz "%(loss/counter, top1/counter, stepsize/telapsed));
-            sys.stdout.write("Q:(%d/%d)"%(loader.qsize(), loader.maxQueueSize));
-            sys.stdout.flush();
+            if counter % new_print_interval == 0:
+                # not sure how to format in f-format str
+                eer_str = "%2.3f%%"%(top1/counter) 
+                print(f"Processing ({index}/{len(loader)}): "
+                      f"Loss {loss/counter}, "
+                      f"EER/T1 {eer_str}, "
+                      f"Train-rate {(stepsize/telapsed):.2f} batches/sec, "
+                      f"Queue usage ({loader.qsize()}/{loader.maxQueueSize})")
 
-        sys.stdout.write("\n");
-        
         return (loss/counter, top1/counter);
 
     ## ===== ===== ===== ===== ===== ===== ===== =====
@@ -162,7 +171,7 @@ class SpeakerNet(nn.Module):
     ## Evaluate from list
     ## ===== ===== ===== ===== ===== ===== ===== =====
 
-    def evaluateFromListSave(self, listfilename, print_interval=5000, feat_dir='', test_path='', num_eval=10):
+    def evaluateFromListSave(self, listfilename, print_interval_percent=10, feat_dir='', test_path='', num_eval=10):
         
         self.eval();
         
@@ -193,6 +202,7 @@ class SpeakerNet(nn.Module):
         setfiles = list(set(files))
         setfiles.sort()
 
+        print_interval = int(len(setfiles)*print_interval_percent/100)
         ## Save all features to file
         for idx, file in enumerate(setfiles):
             # extract Subsets x Freq x Frames tensor from a single utterance in
@@ -217,13 +227,14 @@ class SpeakerNet(nn.Module):
             telapsed = time.time() - tstart
 
             if idx % print_interval == 0:
-                sys.stdout.write("\rReading %d: %.2f Hz, embed size %d"%(idx,idx/telapsed,ref_feat.size()[1]));
+                print(f"Reading {idx}/{len(setfiles)}: {(idx/telapsed):.2f} Hz, embed size {ref_feat.size()[1]}")
 
-        print('')
         all_scores = [];
         all_labels = [];
         tstart = time.time()
 
+        total_length = len(lines)
+        print_interval = int(total_length*print_interval_percent/100)
         ## Read files and compute all scores
         for idx, line in enumerate(lines):
 
@@ -249,14 +260,11 @@ class SpeakerNet(nn.Module):
 
             if idx % print_interval == 0:
                 telapsed = time.time() - tstart
-                sys.stdout.write("\rComputing %d: %.2f Hz"%(idx,idx/telapsed));
-                sys.stdout.flush();
+                print(f"Computing {idx}/{total_length}: {(idx/telapsed):.2f} Hz")
 
         if feat_dir != '':
             print(' Deleting temporary files.')
             shutil.rmtree(feat_dir)
-
-        print('\n')
 
         return (all_scores, all_labels);
 
