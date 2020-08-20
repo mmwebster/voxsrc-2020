@@ -27,8 +27,9 @@ def baseline_repro_pipeline(
     train_path: str = 'vox2_no_cuda.tar.gz',
     checkpoint_bucket: str = 'voxsrc-2020-checkpoints',
     batch_size: int = 5,
-    max_epoch: int = 1,
+    max_epoch: int = 2,
     n_speakers: int = 2,
+    test_interval: int = 1,
     # @TODO Figure out why feat extraction is taking so much longer on GKE.
     #       Could be an issue of compute or IO performance. Currently 10 threads
     #       performs well on n1-standard-16
@@ -69,6 +70,7 @@ def baseline_repro_pipeline(
         checkpoint_bucket = checkpoint_bucket,
         run_id = run_id,
         n_speakers = n_speakers,
+        test_interval = test_interval,
     )
 
     train_task.after(feature_extraction_task)

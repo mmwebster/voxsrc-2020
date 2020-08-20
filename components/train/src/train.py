@@ -57,6 +57,7 @@ parser.add_argument('--save-tmp-feats-to', type=str, default="./tmp/feats/");
 parser.add_argument('--save-tmp-wandb-to', type=str, default="./tmp/");
 
 parser.add_argument('--set-seed', action='store_true')
+parser.add_argument('--no-cuda', action='store_true', help="Flag to disable cuda for this run")
 
 parser.add_argument('--checkpoint-bucket', type=str,
         default="voxsrc-2020-checkpoints-dev");
@@ -180,10 +181,12 @@ for d in (tmp_output_dirs + output_dirs):
     if not(os.path.exists(d)):
         os.makedirs(d)
 
-# set device cuda or cpu
+# set torch device to cuda or cpu
 cuda_avail = torch.cuda.is_available()
-device = torch.device("cuda" if cuda_avail else "cpu")
 print(f"Cuda available: {cuda_avail}")
+use_cuda = cuda_avail and not args.no_cuda
+print(f"Using cuda: {use_cuda}")
+device = torch.device("cuda" if use_cuda else "cpu")
 
 ## Load models
 s = SpeakerNet(device, **vars(args));
@@ -281,15 +284,13 @@ clr = s.updateLearningRate(1)
 print(f"Creating parent dir for path={args.save_tmp_model_to}")
 Path(args.save_tmp_model_to).parent.mkdir(parents=True, exist_ok=True)
 
-wandb_log = {'epoch': 0, 'loss': 0, 'train_EER': 0, 'lr': 0, 'val_EER': 0}
+wandb_log = {'epoch': 0, 'loss': 0, 'train_EER': 0, 'clr': max(clr), 'val_EER': 0}
 
 while(1):
     print(time.strftime("%Y-%m-%d %H:%M:%S"), it, "Training %s with LR %f..."%(args.model,max(clr)));
 
     ## Train network
     loss, traineer = s.train_network(loader=trainLoader);
-
-    wandb_log.update({'epoch': it, 'loss': loss, 'train_EER': traineer})
 
     # validate and save model
     if it % args.test_interval == 0:
@@ -321,11 +322,10 @@ while(1):
 
         scorefile.flush()
 
-
     if it % args.lr_decay_interval == 0:
         clr = s.updateLearningRate(args.lr_decay)
-        wandb_log.update({'lr': clr})
 
+    wandb_log.update({'epoch': it, 'loss': loss, 'train_EER': traineer, 'clr': max(clr)})
     wandb.log(wandb_log)
 
     # save model file for this epoch
