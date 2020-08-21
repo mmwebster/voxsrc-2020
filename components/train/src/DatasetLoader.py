@@ -135,7 +135,7 @@ class DatasetLoader(object):
                     # @note casting pre-extracted float16 features to float32 so
                     #       as to not inadvertently introduce network quantization
                     utterance_file_path = self.data_list[ij][ii].replace(".wav", ".npy")
-                    full_spectrogram = np.load(utterance_file_path).astype('float32')
+                    full_spectrogram = np.load(utterance_file_path)
                     subset_spectrogram = extract_subset_of_spectrogram(full_spectrogram, self.max_frames)
                     feat.append(torch.FloatTensor(subset_spectrogram));
                 in_data.append(torch.cat(feat, dim=0));

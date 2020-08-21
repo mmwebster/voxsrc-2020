@@ -222,26 +222,29 @@ class SpeakerNet(nn.Module):
             # extract Subsets x Freq x Frames tensor from a single utterance in
             # evaluation set for evaluation features
             utterance_file_path = os.path.join(test_path,file).replace(".wav", ".npy")
-            full_utterance_spectrogram = np.load(utterance_file_path).astype('float32')
-            overlapping_spectrogram_subsets = torch.FloatTensor(
-                    extract_eval_subsets_from_spectrogram(
-                        full_utterance_spectrogram, self.__max_frames__)).to(self.device)
+            full_utterance_spectrogram = np.load(utterance_file_path)
 
-            ref_feat = self.__S__.forward(
-                    overlapping_spectrogram_subsets).detach().cpu()
+            # evaluate on network with half-precision where possible
+            with torch.cuda.amp.autocast():
+                overlapping_spectrogram_subsets = torch.FloatTensor(
+                        extract_eval_subsets_from_spectrogram(
+                            full_utterance_spectrogram, self.__max_frames__)).to(self.device)
 
-            filename = '%06d.wav'%idx
+                ref_feat = self.__S__.forward(
+                        overlapping_spectrogram_subsets).detach().cpu()
 
-            if feat_dir == '':
-                feats[file]     = ref_feat
-            else:
-                filedict[file]  = filename
-                torch.save(ref_feat,os.path.join(feat_dir,filename))
+                filename = '%06d.wav'%idx
 
-            telapsed = time.time() - tstart
+                if feat_dir == '':
+                    feats[file]     = ref_feat
+                else:
+                    filedict[file]  = filename
+                    torch.save(ref_feat,os.path.join(feat_dir,filename))
 
-            if idx % print_interval == 0:
-                print(f"Reading {idx}/{len(setfiles)}: {(idx/telapsed):.2f} Hz, embed size {ref_feat.size()[1]}")
+                telapsed = time.time() - tstart
+
+                if idx % print_interval == 0:
+                    print(f"Reading {idx}/{len(setfiles)}: {(idx/telapsed):.2f} Hz, embed size {ref_feat.size()[1]}")
 
         all_scores = [];
         all_labels = [];
@@ -254,23 +257,25 @@ class SpeakerNet(nn.Module):
 
             data = line.split();
 
-            if feat_dir == '':
-                ref_feat = feats[data[1]].to(self.device)
-                com_feat = feats[data[2]].to(self.device)
-            else:
-                ref_feat = torch.load(os.path.join(feat_dir,filedict[data[1]])).to(self.device)
-                com_feat = torch.load(os.path.join(feat_dir,filedict[data[2]])).to(self.device)
+            # evaluate with half precision where possible
+            with torch.cuda.amp.autocast():
+                if feat_dir == '':
+                    ref_feat = feats[data[1]].to(self.device)
+                    com_feat = feats[data[2]].to(self.device)
+                else:
+                    ref_feat = torch.load(os.path.join(feat_dir,filedict[data[1]])).to(self.device)
+                    com_feat = torch.load(os.path.join(feat_dir,filedict[data[2]])).to(self.device)
 
-            if self.__test_normalize__:
-                ref_feat = F.normalize(ref_feat, p=2, dim=1)
-                com_feat = F.normalize(com_feat, p=2, dim=1)
+                if self.__test_normalize__:
+                    ref_feat = F.normalize(ref_feat, p=2, dim=1)
+                    com_feat = F.normalize(com_feat, p=2, dim=1)
 
-            dist = F.pairwise_distance(ref_feat.unsqueeze(-1).expand(-1,-1,num_eval), com_feat.unsqueeze(-1).expand(-1,-1,num_eval).transpose(0,2)).detach().cpu().numpy();
+                dist = F.pairwise_distance(ref_feat.unsqueeze(-1).expand(-1,-1,num_eval), com_feat.unsqueeze(-1).expand(-1,-1,num_eval).transpose(0,2)).detach().cpu().numpy();
 
-            score = -1 * np.mean(dist);
+                score = -1 * np.mean(dist);
 
-            all_scores.append(score);  
-            all_labels.append(int(data[0]));
+                all_scores.append(score);  
+                all_labels.append(int(data[0]));
 
             if idx % print_interval == 0:
                 telapsed = time.time() - tstart
