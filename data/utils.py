@@ -17,7 +17,7 @@ import subprocess
 from pathlib import Path
 import time
 
-from data_utils import download_gcs_blob_in_parallel, extract_tar, \
+from utils.data_utils import download_gcs_blob_in_parallel, extract_tar, \
                      convert_aac_to_wav
 
 # Usage example:

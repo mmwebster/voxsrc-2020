@@ -11,6 +11,7 @@ import time
 import math
 from scipy.io import wavfile
 import queue
+from utils.misc_utils import print_throttler
 
 def round_down(num, divisor):
     return num - (num%divisor)
@@ -84,6 +85,9 @@ class DatasetLoader(object):
         self.batch_size = batch_size;
         self.maxQueueSize = maxQueueSize;
 
+        self.dequeue_timeout_print_throttler = print_throttler(min_print_period_secs=.5)
+        self.num_dequeue_timeouts = 0
+
         self.data_dict = {};
         self.data_list = [];
         self.nFiles = 0;
@@ -156,6 +160,7 @@ class DatasetLoader(object):
         print(f"DatasetLoader: Stopping worker thread #{nThreadIndex}")
 
     def __iter__(self):
+        self.num_dequeue_timeouts = 0
 
         dictkeys = list(self.data_dict.keys());
         dictkeys.sort()
@@ -221,8 +226,12 @@ class DatasetLoader(object):
                 # grab a set of batches (might just be one batch, not sure)
                 return self.datasetQueue.get(timeout=.1)
             except queue.Empty:
-                print("DatasetLoader: Timed out on fetching batch set from "
-                      "queue. Can the data loaders populate it fast enough?!")
+                # print throttled dequeue timeout message (these have a tendency
+                # to spam, and spamming on the cluster can prevent logs from showing)
+                self.num_dequeue_timeouts += 1
+                self.dequeue_timeout_print_throttler.throttle_print(
+                        f"DatasetLoader: Batch dequeue timeout "
+                        f"(total count in epoch: {self.num_dequeue_timeouts})")
                 # if all data loaders are dead, then the epoch is done
                 if self.all_workers_dead():
                     print("DatasetLoader: All workers are dead.")

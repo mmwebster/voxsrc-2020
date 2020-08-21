@@ -20,7 +20,7 @@ from FeatureExtractor import FeatureExtractor
 import subprocess
 import time
 from pathlib import Path
-from data_utils import download_gcs_dataset, extract_gcs_dataset, \
+from utils.data_utils import download_gcs_dataset, extract_gcs_dataset, \
                      transcode_gcs_dataset, get_loc_paths_from_gcs_dataset,\
                      download_blob, upload_blob, compress_to_tar
 import yaml
@@ -125,7 +125,7 @@ if not args.reuse_run_with_id:
     print("Installing dataset from GCS")
     # @TODO mimic the --install-local-dataset function in
     #       data/utils.py, using the newer functions that it invokes
-    #       in common/src/data_utils.py
+    #       in common/src/utils/data_utils.py
     # @TODO change extract and transcode to take explicit params
 
     # download, extract, transcode (compressed AAC->WAV) dataset
