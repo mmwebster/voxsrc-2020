@@ -94,6 +94,8 @@ class SpeakerNet(nn.Module):
         top1    = 0     # EER or accuracy
 
         criterion = torch.nn.CrossEntropyLoss()
+        # mixed precision scaler
+        scaler = torch.cuda.amp.GradScaler()
 
         print_interval_percent = 1
         print_interval = 0
@@ -110,25 +112,30 @@ class SpeakerNet(nn.Module):
             self.zero_grad();
 
             feat = []
-            for inp in data:
-                outp      = self.__S__.forward(inp.to(self.device))
-                if self.__train_normalize__:
-                    outp   = F.normalize(outp, p=2, dim=1)
-                feat.append(outp)
+            # use autocast for half precision where possible
+            with torch.cuda.amp.autocast():
+                for inp in data:
+                    outp      = self.__S__.forward(inp.to(self.device))
+                    if self.__train_normalize__:
+                        outp   = F.normalize(outp, p=2, dim=1)
+                    feat.append(outp)
 
-            feat = torch.stack(feat,dim=1).squeeze()
+                feat = torch.stack(feat,dim=1).squeeze()
 
-            label   = torch.LongTensor(data_label).to(self.device)
+                label   = torch.LongTensor(data_label).to(self.device)
 
-            nloss, prec1 = self.__L__.forward(feat,label)
+                nloss, prec1 = self.__L__.forward(feat,label)
 
-            loss    += nloss.detach().cpu();
-            top1    += prec1
-            counter += 1;
-            index   += stepsize;
+                loss    += nloss.detach().cpu();
+                top1    += prec1
+                counter += 1;
+                index   += stepsize;
 
-            nloss.backward();
-            self.__optimizer__.step();
+            # run backward pass and step optimizer using the autoscaler
+            # to mitigate half-precision convergence issues
+            scaler.scale(nloss).backward()
+            scaler.step(self.__optimizer__)
+            scaler.update()
 
             if counter % print_interval == 0:
                 # not sure how to format in f-format str
