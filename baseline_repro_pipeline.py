@@ -15,6 +15,7 @@ train_op = comp.load_component_from_file(os.path.join(
     description='Train baseline models'
 )
 # Define a pipeline and create a task from a component
+# @TODO create another prod pipeline with common code parameterized
 def baseline_repro_pipeline(
     data_bucket: str = 'voxsrc-2020-voxceleb-v4',
     test_list: str = 'vox1_no_cuda.txt',

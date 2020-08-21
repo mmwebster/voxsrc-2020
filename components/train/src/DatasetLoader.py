@@ -76,7 +76,7 @@ def extract_eval_subsets_from_spectrogram(spectrogram, desired_frames, n_subsets
 class DatasetLoader(object):
     def __init__(self, dataset_file_name, batch_size, max_frames,
             max_seg_per_spk, n_data_loader_thread, gSize, new_train_path,
-            maxQueueSize = 10, **kwargs):
+            maxQueueSize = 50, **kwargs):
         self.dataset_file_name = dataset_file_name;
         self.n_workers = n_data_loader_thread;
         self.max_frames = max_frames;

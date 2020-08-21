@@ -175,6 +175,7 @@ else:
 tmp_output_dirs = [args.save_tmp_model_to, args.save_tmp_results_to,
         args.save_tmp_feats_to]
 # directories of parmanent / component output artifacts
+# @TODO this working?
 output_dirs = [os.path.dirname(args.save_model_to)]
 
 for d in (tmp_output_dirs + output_dirs):
@@ -203,6 +204,13 @@ metadata_gcs_src_path = os.path.join(args.run_id, METADATA_NAME)
 metadata_file_dst_path = os.path.join(args.save_tmp_model_to, METADATA_NAME)
 default_metadata = {'is_done': False}
 metadata = default_metadata
+
+def save_model_kf_output_artifact(model, epoch, dst):
+    final_model_name = "model%09d.model"%epoch
+    Path(dst).mkdir(parents=True, exist_ok=True)
+    final_model_filename = os.path.join(dst, final_model_name)
+    print(f"Saving KF output artifact {final_model_name} to {dst}")
+    model.saveParameters(final_model_filename);
 
 if args.reset_training:
     print("Starting at epoch 0, regardless of previous training progress")
@@ -239,6 +247,8 @@ else:
 
     # exit if previous training run finished
     if 'is_done' in metadata and metadata['is_done']:
+        save_model_kf_output_artifact(s, metadata['num_epochs'],
+                                      args.save_model_to)
         print("Terminating... training for this run has already completed")
         quit()
 
@@ -319,9 +329,6 @@ while(1):
         print(time.strftime("%Y-%m-%d %H:%M:%S"), "LR %f, TEER %2.2f, TLOSS %f"%( max(clr), traineer, loss));
         scorestuff = "IT %d, LR %f, TEER %2.2f, TLOSS %f\n"%(it, max(clr), traineer, loss)
         scorefile.write(scorestuff);
-        # write contents
-        with open(args.save_model_to, 'w') as model_save_file:
-            model_save_file.write(f"[model] ret={scorestuff}\n")
 
         scorefile.flush()
 
@@ -364,7 +371,6 @@ while(1):
 
 scorefile.close();
 
-
 # save "done" to metadata so it restarts on retry
 metadata['is_done'] = True
 
@@ -381,3 +387,7 @@ metadata_gcs_dst_path = metadata_gcs_src_path
 metadata_file_src_path = metadata_file_dst_path
 upload_blob(args.checkpoint_bucket, metadata_gcs_dst_path,
         metadata_file_src_path)
+
+# write the final model as a kubeflow output artifact
+save_model_kf_output_artifact(s, metadata['num_epochs'],
+                              args.save_model_to)

@@ -95,7 +95,7 @@ class SpeakerNet(nn.Module):
 
         criterion = torch.nn.CrossEntropyLoss()
 
-        print_interval_percent = 10
+        print_interval_percent = 5
         new_print_interval = 0
         for data, data_label in loader:
             if new_print_interval == 0:
