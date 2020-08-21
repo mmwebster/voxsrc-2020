@@ -95,16 +95,17 @@ class SpeakerNet(nn.Module):
 
         criterion = torch.nn.CrossEntropyLoss()
 
-        print_interval_percent = 5
-        new_print_interval = 0
+        print_interval_percent = 1
+        print_interval = 0
+        print_interval_start_time = time.time()
+        epoch_start_time = time.time()
         for data, data_label in loader:
-            if new_print_interval == 0:
+            # init print interval after data loader has set its length during __iter__
+            if print_interval == 0:
                 num_batches = (len(loader)/loader.batch_size)
-                new_print_interval = int(num_batches*print_interval_percent/100)
+                print_interval = max(int(num_batches*print_interval_percent/100), 1)
                 print(f"SpeakerNet: Starting training @ {print_interval_percent}%"
                       f" update interval")
-
-            tstart = time.time()
 
             self.zero_grad();
 
@@ -129,17 +130,23 @@ class SpeakerNet(nn.Module):
             nloss.backward();
             self.__optimizer__.step();
 
-            telapsed = time.time() - tstart
-
-            if counter % new_print_interval == 0:
+            if counter % print_interval == 0:
                 # not sure how to format in f-format str
-                eer_str = "%2.3f%%"%(top1/counter) 
-                print(f"Processing ({index}/{len(loader)}): "
-                      f"Loss {loss/counter}, "
+                interval_elapsed_time = time.time() - print_interval_start_time
+                print_interval_start_time = time.time()
+                eer_str = "%2.3f%%"%(top1/counter)
+                # misc progress updates and estimates
+                progress_percent = int(index * 100 / len(loader))
+                num_samples_processed = print_interval * loader.batch_size
+                sample_train_rate = num_samples_processed / interval_elapsed_time
+                epoch_train_period = (len(loader) / sample_train_rate) / 60
+                print(f"SpeakerNet: Processed {progress_percent}% (of {len(loader)}) => "
+                      f"Loss {loss/counter:.2f}, "
                       f"EER/T1 {eer_str}, "
-                      f"Train-rate {(stepsize/telapsed):.2f} batches/sec, "
-                      f"Queue usage ({loader.qsize()}/{loader.maxQueueSize})")
+                      f"Train-rate {sample_train_rate:.2f} samples/sec "
+                      f"(est. {epoch_train_period:.2f} mins/epoch)")
 
+        print(f"SpeakerNet: Finished epoch in {(time.time() - epoch_start_time)/60:.2f} mins")
         return (loss/counter, top1/counter);
 
     ## ===== ===== ===== ===== ===== ===== ===== =====
