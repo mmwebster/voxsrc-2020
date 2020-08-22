@@ -109,7 +109,7 @@ class SpeakerNet(nn.Module):
             if print_interval == 0:
                 num_batches = (len(loader)/loader.batch_size)
                 print_interval = max(int(num_batches*print_interval_percent/100), 1)
-                print(f"SpeakerNet: (Hi) Starting training @ {print_interval_percent}%"
+                print(f"SpeakerNet: Starting training @ {print_interval_percent}%"
                       f" update interval")
 
             self.zero_grad();

@@ -202,7 +202,7 @@ sumloss     = 0;
 METADATA_NAME = 'metadata.yaml'
 metadata_gcs_src_path = os.path.join(args.run_id, METADATA_NAME)
 metadata_file_dst_path = os.path.join(args.save_tmp_model_to, METADATA_NAME)
-default_metadata = {'is_done': False}
+default_metadata = {'is_done': False, 'val_EER': 0}
 metadata = default_metadata
 
 def save_model_kf_output_artifact(model, epoch, dst):
@@ -296,7 +296,7 @@ clr = s.updateLearningRate(1)
 print(f"Creating parent dir for path={args.save_tmp_model_to}")
 Path(args.save_tmp_model_to).parent.mkdir(parents=True, exist_ok=True)
 
-wandb_log = {'epoch': 0, 'loss': 0, 'train_EER': 0, 'clr': max(clr), 'val_EER': 0}
+wandb_log = {'epoch': 0, 'loss': 0, 'train_EER': 0, 'clr': max(clr), 'val_EER': metadata['val_EER']}
 
 while(1):
     print(time.strftime("%Y-%m-%d %H:%M:%S"), it, "Training %s with LR %f..."%(args.model,max(clr)));
@@ -321,9 +321,8 @@ while(1):
         eerfile = open(args.save_tmp_model_to+"/model%09d.eer"%it, 'w')
         eerfile.write('%.4f'%result[1])
         eerfile.close()
-        ret = '%.4f'%result[1]
 
-        wandb_log.update({'val_EER': result[1]})
+        wandb_log.update({'val_EER': float(round(result[1],5))})
 
     else:
         print(time.strftime("%Y-%m-%d %H:%M:%S"), "LR %f, TEER %2.2f, TLOSS %f"%( max(clr), traineer, loss));
@@ -345,6 +344,7 @@ while(1):
     # update metadata
     metadata['latest_model_name'] = model_name
     metadata['num_epochs'] = it
+    metadata['val_EER'] = wandb_log['val_EER']
     # dump metadata to yaml file
     with open(metadata_file_dst_path, 'w') as f:
         try:
