@@ -10,7 +10,7 @@ import time
 class print_throttler():
     def __init__(self, min_print_period_secs=10):
         self.min_print_period_secs = min_print_period_secs
-        self.last_call = time.time()
+        self.last_call = 0
 
     def throttle_print(self, print_str):
         if (time.time() - self.last_call) >= self.min_print_period_secs:
