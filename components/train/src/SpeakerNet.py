@@ -16,6 +16,9 @@ from loss.arcface import AAMSoftmax
 from loss.softmax import SoftmaxLoss
 from loss.protoloss import ProtoLoss
 from loss.pairwise import PairwiseLoss
+import torch.cuda.amp as amp
+
+from utils.misc_utils import print_throttler
 
 import wandb
 
@@ -75,7 +78,7 @@ class SpeakerNet(nn.Module):
             self.__optimizer__ = torch.optim.SGD(self.parameters(), lr = lr, momentum = 0.9, weight_decay=5e-5);
         else:
             raise ValueError('Undefined optimizer.')
-        
+
         self.__max_frames__ = max_frames;
 
     ## ===== ===== ===== ===== ===== ===== ===== =====
@@ -95,7 +98,7 @@ class SpeakerNet(nn.Module):
 
         criterion = torch.nn.CrossEntropyLoss()
         # mixed precision scaler
-        scaler = torch.cuda.amp.GradScaler()
+        scaler = amp.GradScaler()
 
         print_interval_percent = 1
         print_interval = 0
@@ -106,14 +109,16 @@ class SpeakerNet(nn.Module):
             if print_interval == 0:
                 num_batches = (len(loader)/loader.batch_size)
                 print_interval = max(int(num_batches*print_interval_percent/100), 1)
-                print(f"SpeakerNet: Starting training @ {print_interval_percent}%"
+                print(f"SpeakerNet: (Hi) Starting training @ {print_interval_percent}%"
                       f" update interval")
 
             self.zero_grad();
 
             feat = []
             # use autocast for half precision where possible
-            with torch.cuda.amp.autocast():
+            with amp.autocast():
+                # @TODO Can alls inp-s in data go into a single batch to
+                #       populate feats?
                 for inp in data:
                     outp      = self.__S__.forward(inp.to(self.device))
                     if self.__train_normalize__:
@@ -225,7 +230,7 @@ class SpeakerNet(nn.Module):
             full_utterance_spectrogram = np.load(utterance_file_path)
 
             # evaluate on network with half-precision where possible
-            with torch.cuda.amp.autocast():
+            with amp.autocast():
                 overlapping_spectrogram_subsets = torch.FloatTensor(
                         extract_eval_subsets_from_spectrogram(
                             full_utterance_spectrogram, self.__max_frames__)).to(self.device)
@@ -258,7 +263,7 @@ class SpeakerNet(nn.Module):
             data = line.split();
 
             # evaluate with half precision where possible
-            with torch.cuda.amp.autocast():
+            with amp.autocast():
                 if feat_dir == '':
                     ref_feat = feats[data[1]].to(self.device)
                     com_feat = feats[data[2]].to(self.device)
