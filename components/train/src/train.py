@@ -184,10 +184,12 @@ for d in (tmp_output_dirs + output_dirs):
 
 # set torch device to cuda or cpu
 cuda_avail = torch.cuda.is_available()
-print(f"Cuda available: {cuda_avail}")
+print(f"train.py: Cuda available: {cuda_avail}")
 use_cuda = cuda_avail and not args.no_cuda
-print(f"Using cuda: {use_cuda}")
+print(f"train.py: Using cuda: {use_cuda}")
 device = torch.device("cuda" if use_cuda else "cpu")
+print(f"train.py: Torch version: {torch.__version__}")
+print(f"train.py: Cuda version: {torch.version.cuda}")
 
 ## Load models
 s = SpeakerNet(device, **vars(args));
