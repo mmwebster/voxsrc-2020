@@ -100,10 +100,12 @@ class SpeakerNet(nn.Module):
         # mixed precision scaler
         scaler = amp.GradScaler()
 
-        print_interval_percent = 1
+        print_interval_percent = 2
         print_interval = 0
         print_interval_start_time = time.time()
         epoch_start_time = time.time()
+
+
         for data, data_label in loader:
             # init print interval after data loader has set its length during __iter__
             if print_interval == 0:
