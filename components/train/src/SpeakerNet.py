@@ -4,10 +4,11 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy, math, pdb, sys, random
+import math, pdb, sys, random
+import numpy as np
 import time, os, itertools, shutil, importlib
 from baseline_misc.tuneThreshold import tuneThresholdfromScore
-from DatasetLoader import loadWAV
+from DatasetLoader import extract_eval_subsets_from_spectrogram
 from loss.ge2e import GE2ELoss
 from loss.angleproto import AngleProtoLoss
 from loss.cosface import AMSoftmax
@@ -15,6 +16,9 @@ from loss.arcface import AAMSoftmax
 from loss.softmax import SoftmaxLoss
 from loss.protoloss import ProtoLoss
 from loss.pairwise import PairwiseLoss
+import torch.cuda.amp as amp
+
+from utils.misc_utils import print_throttler
 
 import wandb
 
@@ -74,7 +78,7 @@ class SpeakerNet(nn.Module):
             self.__optimizer__ = torch.optim.SGD(self.parameters(), lr = lr, momentum = 0.9, weight_decay=5e-5);
         else:
             raise ValueError('Undefined optimizer.')
-        
+
         self.__max_frames__ = max_frames;
 
     ## ===== ===== ===== ===== ===== ===== ===== =====
@@ -93,43 +97,70 @@ class SpeakerNet(nn.Module):
         top1    = 0     # EER or accuracy
 
         criterion = torch.nn.CrossEntropyLoss()
-        
-        for data, data_label in loader:
+        # mixed precision scaler
+        scaler = amp.GradScaler()
 
-            tstart = time.time()
+        print_interval_percent = 2
+        print_interval = 0
+        print_interval_start_time = time.time()
+        epoch_start_time = time.time()
+
+
+        for data, data_label in loader:
+            # init print interval after data loader has set its length during __iter__
+            if print_interval == 0:
+                num_batches = (len(loader)/loader.batch_size)
+                print_interval = max(int(num_batches*print_interval_percent/100), 1)
+                print(f"SpeakerNet: Starting training @ {print_interval_percent}%"
+                      f" update interval")
 
             self.zero_grad();
 
             feat = []
-            for inp in data:
-                outp      = self.__S__.forward(inp.to(self.device))
-                if self.__train_normalize__:
-                    outp   = F.normalize(outp, p=2, dim=1)
-                feat.append(outp)
+            # use autocast for half precision where possible
+            with amp.autocast():
+                # @TODO Can alls inp-s in data go into a single batch to
+                #       populate feats?
+                for inp in data:
+                    outp      = self.__S__.forward(inp.to(self.device))
+                    if self.__train_normalize__:
+                        outp   = F.normalize(outp, p=2, dim=1)
+                    feat.append(outp)
 
-            feat = torch.stack(feat,dim=1).squeeze()
+                feat = torch.stack(feat,dim=1).squeeze()
 
-            label   = torch.LongTensor(data_label).to(self.device)
+                label   = torch.LongTensor(data_label).to(self.device)
 
-            nloss, prec1 = self.__L__.forward(feat,label)
+                nloss, prec1 = self.__L__.forward(feat,label)
 
-            loss    += nloss.detach().cpu();
-            top1    += prec1
-            counter += 1;
-            index   += stepsize;
+                loss    += nloss.detach().cpu();
+                top1    += prec1
+                counter += 1;
+                index   += stepsize;
 
-            nloss.backward();
-            self.__optimizer__.step();
+            # run backward pass and step optimizer using the autoscaler
+            # to mitigate half-precision convergence issues
+            scaler.scale(nloss).backward()
+            scaler.step(self.__optimizer__)
+            scaler.update()
 
-            telapsed = time.time() - tstart
+            if counter % print_interval == 0:
+                # not sure how to format in f-format str
+                interval_elapsed_time = time.time() - print_interval_start_time
+                print_interval_start_time = time.time()
+                eer_str = "%2.3f%%"%(top1/counter)
+                # misc progress updates and estimates
+                progress_percent = int(index * 100 / len(loader))
+                num_samples_processed = print_interval * loader.batch_size
+                sample_train_rate = num_samples_processed / interval_elapsed_time
+                epoch_train_period = (len(loader) / sample_train_rate) / 60
+                print(f"SpeakerNet: Processed {progress_percent}% (of {len(loader)}) => "
+                      f"Loss {loss/counter:.2f}, "
+                      f"EER/T1 {eer_str}, "
+                      f"Train-rate {sample_train_rate:.2f} samples/sec "
+                      f"(est. {epoch_train_period:.2f} mins/epoch)")
 
-            sys.stdout.write("\rProcessing (%d/%d) "%(index, loader.nFiles));
-            sys.stdout.write("Loss %f EER/T1 %2.3f%% - %.2f Hz "%(loss/counter, top1/counter, stepsize/telapsed));
-            sys.stdout.write("Q:(%d/%d)"%(loader.qsize(), loader.maxQueueSize));
-            sys.stdout.flush();
-
-        sys.stdout.write("\n");
-        
+        print(f"SpeakerNet: Finished epoch in {(time.time() - epoch_start_time)/60:.2f} mins")
         return (loss/counter, top1/counter);
 
     ## ===== ===== ===== ===== ===== ===== ===== =====
@@ -161,7 +192,7 @@ class SpeakerNet(nn.Module):
     ## Evaluate from list
     ## ===== ===== ===== ===== ===== ===== ===== =====
 
-    def evaluateFromListSave(self, listfilename, print_interval=5000, feat_dir='', test_path='', num_eval=10):
+    def evaluateFromListSave(self, listfilename, print_interval_percent=10, feat_dir='', test_path='', num_eval=10):
         
         self.eval();
         
@@ -192,64 +223,74 @@ class SpeakerNet(nn.Module):
         setfiles = list(set(files))
         setfiles.sort()
 
+        print_interval = int(len(setfiles)*print_interval_percent/100)
         ## Save all features to file
         for idx, file in enumerate(setfiles):
+            # extract Subsets x Freq x Frames tensor from a single utterance in
+            # evaluation set for evaluation features
+            utterance_file_path = os.path.join(test_path,file).replace(".wav", ".npy")
+            full_utterance_spectrogram = np.load(utterance_file_path)
 
-            inp1 = loadWAV(os.path.join(test_path,file), self.__max_frames__, evalmode=True, num_eval=num_eval).to(self.device)
+            # evaluate on network with half-precision where possible
+            with amp.autocast():
+                overlapping_spectrogram_subsets = torch.FloatTensor(
+                        extract_eval_subsets_from_spectrogram(
+                            full_utterance_spectrogram, self.__max_frames__)).to(self.device)
 
-            ref_feat = self.__S__.forward(inp1).detach().cpu()
+                ref_feat = self.__S__.forward(
+                        overlapping_spectrogram_subsets).detach().cpu()
 
-            filename = '%06d.wav'%idx
+                filename = '%06d.wav'%idx
 
-            if feat_dir == '':
-                feats[file]     = ref_feat
-            else:
-                filedict[file]  = filename
-                torch.save(ref_feat,os.path.join(feat_dir,filename))
+                if feat_dir == '':
+                    feats[file]     = ref_feat
+                else:
+                    filedict[file]  = filename
+                    torch.save(ref_feat,os.path.join(feat_dir,filename))
 
-            telapsed = time.time() - tstart
+                telapsed = time.time() - tstart
 
-            if idx % print_interval == 0:
-                sys.stdout.write("\rReading %d: %.2f Hz, embed size %d"%(idx,idx/telapsed,ref_feat.size()[1]));
+                if idx % print_interval == 0:
+                    print(f"Reading {idx}/{len(setfiles)}: {(idx/telapsed):.2f} Hz, embed size {ref_feat.size()[1]}")
 
-        print('')
         all_scores = [];
         all_labels = [];
         tstart = time.time()
 
+        total_length = len(lines)
+        print_interval = int(total_length*print_interval_percent/100)
         ## Read files and compute all scores
         for idx, line in enumerate(lines):
 
             data = line.split();
 
-            if feat_dir == '':
-                ref_feat = feats[data[1]].to(self.device)
-                com_feat = feats[data[2]].to(self.device)
-            else:
-                ref_feat = torch.load(os.path.join(feat_dir,filedict[data[1]])).to(self.device)
-                com_feat = torch.load(os.path.join(feat_dir,filedict[data[2]])).to(self.device)
+            # evaluate with half precision where possible
+            with amp.autocast():
+                if feat_dir == '':
+                    ref_feat = feats[data[1]].to(self.device)
+                    com_feat = feats[data[2]].to(self.device)
+                else:
+                    ref_feat = torch.load(os.path.join(feat_dir,filedict[data[1]])).to(self.device)
+                    com_feat = torch.load(os.path.join(feat_dir,filedict[data[2]])).to(self.device)
 
-            if self.__test_normalize__:
-                ref_feat = F.normalize(ref_feat, p=2, dim=1)
-                com_feat = F.normalize(com_feat, p=2, dim=1)
+                if self.__test_normalize__:
+                    ref_feat = F.normalize(ref_feat, p=2, dim=1)
+                    com_feat = F.normalize(com_feat, p=2, dim=1)
 
-            dist = F.pairwise_distance(ref_feat.unsqueeze(-1).expand(-1,-1,num_eval), com_feat.unsqueeze(-1).expand(-1,-1,num_eval).transpose(0,2)).detach().cpu().numpy();
+                dist = F.pairwise_distance(ref_feat.unsqueeze(-1).expand(-1,-1,num_eval), com_feat.unsqueeze(-1).expand(-1,-1,num_eval).transpose(0,2)).detach().cpu().numpy();
 
-            score = -1 * numpy.mean(dist);
+                score = -1 * np.mean(dist);
 
-            all_scores.append(score);  
-            all_labels.append(int(data[0]));
+                all_scores.append(score);  
+                all_labels.append(int(data[0]));
 
             if idx % print_interval == 0:
                 telapsed = time.time() - tstart
-                sys.stdout.write("\rComputing %d: %.2f Hz"%(idx,idx/telapsed));
-                sys.stdout.flush();
+                print(f"Computing {idx}/{total_length}: {(idx/telapsed):.2f} Hz")
 
         if feat_dir != '':
             print(' Deleting temporary files.')
             shutil.rmtree(feat_dir)
-
-        print('\n')
 
         return (all_scores, all_labels);
 

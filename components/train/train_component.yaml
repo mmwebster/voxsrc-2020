@@ -11,6 +11,7 @@ inputs:
   - {name: checkpoint_bucket, type: String}
   - {name: run_id, type: String}
   - {name: n_speakers, type: Integer}
+  - {name: test_interval, type: Integer}
 outputs:
 - {name: trained_model, type: GCSPath}
 implementation:
@@ -28,6 +29,7 @@ implementation:
       --checkpoint-bucket, {inputValue: checkpoint_bucket},
       --run-id, {inputValue: run_id},
       --nSpeakers, {inputValue: n_speakers},
+      --test_interval, {inputValue: test_interval},
 
       --save-model-to, {outputPath: trained_model},
     ]

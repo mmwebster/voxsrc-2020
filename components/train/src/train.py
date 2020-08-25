@@ -19,8 +19,8 @@ from DatasetLoader import DatasetLoader
 import subprocess
 import time
 from pathlib import Path
-from data_utils import download_gcs_dataset, extract_gcs_dataset, \
-                     transcode_gcs_dataset, set_loc_paths_from_gcs_dataset,\
+from utils.data_utils import download_gcs_dataset, extract_gcs_dataset, \
+                     transcode_gcs_dataset, get_loc_paths_from_gcs_dataset,\
                      download_blob, upload_blob
 import yaml
 import pwd
@@ -57,6 +57,7 @@ parser.add_argument('--save-tmp-feats-to', type=str, default="./tmp/feats/");
 parser.add_argument('--save-tmp-wandb-to', type=str, default="./tmp/");
 
 parser.add_argument('--set-seed', action='store_true')
+parser.add_argument('--no-cuda', action='store_true', help="Flag to disable cuda for this run")
 
 parser.add_argument('--checkpoint-bucket', type=str,
         default="voxsrc-2020-checkpoints-dev");
@@ -70,7 +71,7 @@ parser.add_argument('--max_frames', type=int, default=200,  help='Input length t
 parser.add_argument('--batch_size', type=int, default=200,  help='Batch size');
 # ^^^ use --batch_size=30 for small datasets that can't fill an entire 200 speaker pair/triplet batch
 parser.add_argument('--max_seg_per_spk', type=int, default=100, help='Maximum number of utterances per speaker per epoch');
-parser.add_argument('--nDataLoaderThread', type=int, default=8, help='Number of loader threads');
+parser.add_argument('--n-data-loader-thread', type=int, default=10, help='Number of loader threads');
 
 ## Training details
 # @TODO disentangle learning rate decay from validation
@@ -82,6 +83,7 @@ parser.add_argument('--optimizer', type=str, default="adam", help='sgd or adam')
 
 ## Learning rates
 parser.add_argument('--lr', type=float, default=0.001,      help='Learning rate');
+parser.add_argument('--lr_decay_interval', type=int, default=10, help='Reduce the learning rate every [lr_decay_interval] epochs');
 parser.add_argument("--lr_decay", type=float, default=0.95, help='Learning rate decay every [test_interval] epochs');
 
 ## Loss functions
@@ -144,19 +146,22 @@ if args.data_bucket is not None and not args.skip_data_fetch:
     print("Installing dataset from GCS")
     # @TODO mimic the --install-local-dataset function in
     #       data/utils.py, using the newer functions that it invokes
-    #       in common/src/data_utils.py
+    #       in common/src/utils/data_utils.py
 
     # download, extract, transcode (compressed AAC->WAV) dataset
-    download_gcs_dataset(args)
-    extract_gcs_dataset(args)
+    blobs = [args.train_list, args.test_list, args.train_path,
+            args.test_path]
+    download_gcs_dataset(args.data_bucket, args.save_tmp_data_to, blobs)
+    # @TODO make extract_gcs_dataset take blob names as well
+    extract_gcs_dataset(args, use_pigz=True)
     # set new lists and data paths
     train_list, test_list, train_path, test_path \
-        = set_loc_paths_from_gcs_dataset(args)
+        = get_loc_paths_from_gcs_dataset(args.save_tmp_data_to, blobs)
 elif args.data_bucket is not None and args.skip_data_fetch:
     print("Skipping GCS data fetch")
     # dataset from GCS already available; set new lists and data paths
     train_list, test_list, train_path, test_path \
-        = set_loc_paths_from_gcs_dataset(args)
+        = get_loc_paths_from_gcs_dataset(args)
 else:
     print("Using local, permanent dataset")
     # pass through to use permanent local dataset
@@ -170,16 +175,21 @@ else:
 tmp_output_dirs = [args.save_tmp_model_to, args.save_tmp_results_to,
         args.save_tmp_feats_to]
 # directories of parmanent / component output artifacts
+# @TODO this working?
 output_dirs = [os.path.dirname(args.save_model_to)]
 
 for d in (tmp_output_dirs + output_dirs):
     if not(os.path.exists(d)):
         os.makedirs(d)
 
-# set device cuda or cpu
+# set torch device to cuda or cpu
 cuda_avail = torch.cuda.is_available()
-device = torch.device("cuda" if cuda_avail else "cpu")
-print(f"Cuda available: {cuda_avail}")
+print(f"train.py: Cuda available: {cuda_avail}")
+use_cuda = cuda_avail and not args.no_cuda
+print(f"train.py: Using cuda: {use_cuda}")
+device = torch.device("cuda" if use_cuda else "cpu")
+print(f"train.py: Torch version: {torch.__version__}")
+print(f"train.py: Cuda version: {torch.version.cuda}")
 
 ## Load models
 s = SpeakerNet(device, **vars(args));
@@ -194,8 +204,15 @@ sumloss     = 0;
 METADATA_NAME = 'metadata.yaml'
 metadata_gcs_src_path = os.path.join(args.run_id, METADATA_NAME)
 metadata_file_dst_path = os.path.join(args.save_tmp_model_to, METADATA_NAME)
-default_metadata = {'is_done': False}
+default_metadata = {'is_done': False, 'val_EER': 0}
 metadata = default_metadata
+
+def save_model_kf_output_artifact(model, epoch, dst):
+    final_model_name = "model%09d.model"%epoch
+    Path(dst).mkdir(parents=True, exist_ok=True)
+    final_model_filename = os.path.join(dst, final_model_name)
+    print(f"Saving KF output artifact {final_model_name} to {dst}")
+    model.saveParameters(final_model_filename);
 
 if args.reset_training:
     print("Starting at epoch 0, regardless of previous training progress")
@@ -232,6 +249,8 @@ else:
 
     # exit if previous training run finished
     if 'is_done' in metadata and metadata['is_done']:
+        save_model_kf_output_artifact(s, metadata['num_epochs'],
+                                      args.save_model_to)
         print("Terminating... training for this run has already completed")
         quit()
 
@@ -241,12 +260,14 @@ if(args.initial_model != ""):
     print("Model %s loaded!"%args.initial_model);
 
 for ii in range(0,it-1):
-    if ii % args.test_interval == 0:
+    if ii % args.lr_decay_interval == 0:
         clr = s.updateLearningRate(args.lr_decay) 
 
 ## Evaluation code
 if args.eval == True:
-    sc, lab = s.evaluateFromListSave(test_list, print_interval=100, feat_dir=args.save_tmp_feats_to, test_path=test_path)
+    sc, lab = s.evaluateFromListSave(test_list, print_interval_percent=10,
+                                     feat_dir=args.save_tmp_feats_to,
+                                     test_path=test_path)
     result = tuneThresholdfromScore(sc, lab, [1, 0.1]);
     print('EER %2.4f'%result[1])
 
@@ -277,7 +298,7 @@ clr = s.updateLearningRate(1)
 print(f"Creating parent dir for path={args.save_tmp_model_to}")
 Path(args.save_tmp_model_to).parent.mkdir(parents=True, exist_ok=True)
 
-wandb_log = {'epoch': 0, 'loss': 0, 'train_EER': 0, 'lr': 0, 'val_EER': 0}
+wandb_log = {'epoch': 0, 'loss': 0, 'train_EER': 0, 'clr': max(clr), 'val_EER': metadata['val_EER']}
 
 while(1):
     print(time.strftime("%Y-%m-%d %H:%M:%S"), it, "Training %s with LR %f..."%(args.model,max(clr)));
@@ -285,14 +306,13 @@ while(1):
     ## Train network
     loss, traineer = s.train_network(loader=trainLoader);
 
-    wandb_log.update({'epoch': it, 'loss': loss, 'train_EER': traineer})
-
-    ## Validate, save, update learning rate
+    # validate and save model
     if it % args.test_interval == 0:
         print(time.strftime("%Y-%m-%d %H:%M:%S"), it, "Evaluating...");
 
-        sc, lab = s.evaluateFromListSave(test_list, print_interval=100,
-                feat_dir=args.save_tmp_feats_to, test_path=test_path)
+        sc, lab = s.evaluateFromListSave(test_list, print_interval_percent=10,
+                                         feat_dir=args.save_tmp_feats_to,
+                                         test_path=test_path)
         result = tuneThresholdfromScore(sc, lab, [1, 0.1]);
 
         print(time.strftime("%Y-%m-%d %H:%M:%S"), "LR %f, TEER/T1 %2.2f, TLOSS %f, VEER %2.4f"%( max(clr), traineer, loss, result[1]));
@@ -300,33 +320,23 @@ while(1):
 
         scorefile.flush()
 
-        clr = s.updateLearningRate(args.lr_decay) 
-
-
-        ## touch the output file/dir
-        #Path(args.save_tmp_model_to).parent.mkdir(parents=True, exist_ok=True)
-        #with open(args.save_tmp_model_to, 'w') as eerfile:
-        #    eerfile.write(f"model iter: {it}")
-        #    eerfile.write('%.4f'%result[1])
-
         eerfile = open(args.save_tmp_model_to+"/model%09d.eer"%it, 'w')
         eerfile.write('%.4f'%result[1])
         eerfile.close()
-        ret = '%.4f'%result[1]
 
-        wandb_log.update({'lr': clr, 'val_EER': result[1]})
+        wandb_log.update({'val_EER': float(round(result[1],5))})
 
     else:
-
         print(time.strftime("%Y-%m-%d %H:%M:%S"), "LR %f, TEER %2.2f, TLOSS %f"%( max(clr), traineer, loss));
         scorestuff = "IT %d, LR %f, TEER %2.2f, TLOSS %f\n"%(it, max(clr), traineer, loss)
         scorefile.write(scorestuff);
-        # write contents
-        with open(args.save_model_to, 'w') as model_save_file:
-            model_save_file.write(f"[model] ret={scorestuff}\n")
 
         scorefile.flush()
 
+    if it % args.lr_decay_interval == 0:
+        clr = s.updateLearningRate(args.lr_decay)
+
+    wandb_log.update({'epoch': it, 'loss': loss, 'train_EER': traineer, 'clr': max(clr)})
     wandb.log(wandb_log)
 
     # save model file for this epoch
@@ -336,6 +346,7 @@ while(1):
     # update metadata
     metadata['latest_model_name'] = model_name
     metadata['num_epochs'] = it
+    metadata['val_EER'] = wandb_log['val_EER']
     # dump metadata to yaml file
     with open(metadata_file_dst_path, 'w') as f:
         try:
@@ -362,7 +373,6 @@ while(1):
 
 scorefile.close();
 
-
 # save "done" to metadata so it restarts on retry
 metadata['is_done'] = True
 
@@ -379,3 +389,7 @@ metadata_gcs_dst_path = metadata_gcs_src_path
 metadata_file_src_path = metadata_file_dst_path
 upload_blob(args.checkpoint_bucket, metadata_gcs_dst_path,
         metadata_file_src_path)
+
+# write the final model as a kubeflow output artifact
+save_model_kf_output_artifact(s, metadata['num_epochs'],
+                              args.save_model_to)

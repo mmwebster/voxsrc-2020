@@ -20,8 +20,8 @@ from FeatureExtractor import FeatureExtractor
 import subprocess
 import time
 from pathlib import Path
-from data_utils import download_gcs_dataset, extract_gcs_dataset, \
-                     transcode_gcs_dataset, set_loc_paths_from_gcs_dataset,\
+from utils.data_utils import download_gcs_dataset, extract_gcs_dataset, \
+                     transcode_gcs_dataset, get_loc_paths_from_gcs_dataset,\
                      download_blob, upload_blob, compress_to_tar
 import yaml
 import pwd
@@ -39,6 +39,16 @@ def gen_run_id():
     user_id = pwd.getpwuid( os.getuid() )[ 0 ]
     wandb_id = wandb.util.generate_id()
     return f"{user_id}-{wandb_id}"
+
+# @brief write outputs to provided output paths
+def write_output_artifact(path, value):
+    # @TODO this is currently going around kubeflow's built in mechanisms. Wasn't
+    #       sure if a component outputPath could be read and delivered to downstream
+    #       components as a string, int, etc, rather than as a file path. Figure out
+    #       the right way to do this...
+    # open and write
+    with open(path, 'w') as f:
+        f.write(value)
 
 parser = argparse.ArgumentParser(description = "Feature Extractor");
 
@@ -75,8 +85,11 @@ parser.add_argument('--run-id', type=str, default=f"{gen_run_id()}",
         help="Auto-generated unique run ID. There is no need to modify this.")
 parser.add_argument('--train_list', type=str,
         help='GCS path to train list. E.g. vox2_no_cuda.txt');
-parser.add_argument('--test_list',  type=str,
-        help='GCS path to test list. E.g. vox1_no_cuda.txt');
+parser.add_argument('--test_utterances_list',  type=str,
+        help="GCS path to test utterances list. Note that this file does not "
+             "containing testing pairs like 'test_list' in the train component "
+             "does. This only lists the utterances like in the 'train_list'. "
+             "E.g. vox1_no_cuda_utterances.txt");
 parser.add_argument('--train_path', type=str, default="voxceleb2",
         help="GCS path to compressed train dataset with .tar.gz file extension. "
              "E.g. vox2_no_cuda.tar.gz");
@@ -107,20 +120,23 @@ if not args.reuse_run_with_id:
         torch.manual_seed(0)
         torch.cuda.manual_seed(0)
 
-    train_list, test_list, train_path, test_path = [None, None, None, None]
+    train_list, test_utterances_list, train_path, test_path = [None, None, None, None]
 
     print("Installing dataset from GCS")
     # @TODO mimic the --install-local-dataset function in
     #       data/utils.py, using the newer functions that it invokes
-    #       in common/src/data_utils.py
+    #       in common/src/utils/data_utils.py
+    # @TODO change extract and transcode to take explicit params
 
     # download, extract, transcode (compressed AAC->WAV) dataset
-    download_gcs_dataset(args)
-    extract_gcs_dataset(args)
+    blobs = [args.train_list, args.test_utterances_list,
+            args.train_path, args.test_path]
+    download_gcs_dataset(args.data_bucket, args.save_tmp_data_to, blobs)
+    extract_gcs_dataset(args, use_pigz=True)
     transcode_gcs_dataset(args)
     # set new lists and data paths
-    train_list, test_list, train_path, test_path \
-        = set_loc_paths_from_gcs_dataset(args)
+    train_list, test_utterances_list, train_path, test_path \
+        = get_loc_paths_from_gcs_dataset(args.save_tmp_data_to, blobs)
 
     # set torch device to cuda or cpu
     cuda_avail = torch.cuda.is_available()
@@ -137,72 +153,87 @@ if not args.reuse_run_with_id:
         log_mel_filter_bank = mel_filter_bank.cpu().log()
         return log_mel_filter_bank.numpy().astype('float16')
 
-    # grab names of test and train from paths
+    # compose list and data paths
+    datasets = []
+    # grab names/paths of test
+    test_name = args.test_path.replace(".tar.gz", "")
+    extracted_test_feats_dataset_name = f"{test_name}_feats_{args.run_id}"
+    dst_test_feats_path = os.path.join(args.save_tmp_data_to, extracted_test_feats_dataset_name)
+    datasets.append({"list_path": test_utterances_list, "data_path": test_path,
+        "dst_feats_path": dst_test_feats_path,
+        "extracted_feats_dataset_name": extracted_test_feats_dataset_name,
+        "artifact_output_path": args.output_path_test_feats_tar_path})
+    # grab names/paths of train
     train_name = args.train_path.replace(".tar.gz", "")
+    extracted_train_feats_dataset_name = f"{train_name}_feats_{args.run_id}"
+    dst_train_feats_path = os.path.join(args.save_tmp_data_to, extracted_train_feats_dataset_name)
+    datasets.append({"list_path": train_list, "data_path": train_path,
+        "dst_feats_path": dst_train_feats_path,
+        "extracted_feats_dataset_name": extracted_train_feats_dataset_name,
+        "artifact_output_path": args.output_path_train_feats_tar_path})
 
-    extracted_feats_dataset_name = f"{train_name}_feats_{args.run_id}"
-    dst_feats_path = os.path.join(args.save_tmp_data_to, extracted_feats_dataset_name)
+    for dataset in datasets:
+        # init the train dataset feature extractor and run it
+        with FeatureExtractor(dataset["list_path"], dataset["data_path"],
+                dataset["dst_feats_path"], feature_extractor_fn,
+                num_threads = args.num_threads) as feature_extractor:
+            print(f"Starting feature extraction for "
+                  f"{dataset['data_path']}:{dataset['list_path']}")
+            feature_extractor.run()
 
-    # init the feature extractor and run it
-    with FeatureExtractor(train_list, train_path, dst_feats_path,
-            feature_extractor_fn,
-            num_threads = args.num_threads) as feature_extractor:
-        feature_extractor.run()
+        # write arg parse params to metadata.txt
+        metadata_file_path = os.path.join(args.save_tmp_data_to,
+                dataset["extracted_feats_dataset_name"], 'metadata.txt')
+        # ensure exists
+        Path(os.path.dirname(metadata_file_path)).mkdir(parents=True, exist_ok=True)
 
-    # write arg parse params to metadata.txt
-    metadata_file_path = os.path.join(args.save_tmp_data_to,
-            extracted_feats_dataset_name, 'metadata.txt')
+        with open(metadata_file_path, "w") as f:
+            # add arg parse params
+            for items in vars(args):
+                f.write(f"{items}: {vars(args)[items]}\n")
+            # add git state
+            try:
+                # commit hash
+                git_hash_dirty = subprocess.check_output(['git', 'rev-parse', 'HEAD'])
+                git_hash_clean = git_hash_dirty.decode('utf8').replace('\n','')
+                # clean/dirty status of local git
+                git_status_dirty = subprocess.check_output(['git', 'diff', '--stat'])
+                git_status_clean = git_status_dirty.decode('utf8')
+                git_status = 'clean' if git_status_clean == "" else 'dirty'
+                # write them
+                f.write(f"Git commit: {git_hash_clean}\n")
+                f.write(f"Git status: {git_status}\n")
+            except subprocess.CalledProcessError:
+                f.write(f"Git commit: [N/A... on cluster]\n")
+                f.write(f"Git status: [N/A... on cluster]\n")
 
-    with open(metadata_file_path, "w") as f:
-        # add arg parse params
-        for items in vars(args):
-            f.write(f"{items}: {vars(args)[items]}\n")
-        # add git state
-        git_hash_clean = "N/A"
-        git_status = "N/A"
-        try:
-            # commit hash
-            git_hash_dirty = subprocess.check_output(['git', 'rev-parse', 'HEAD'])
-            git_hash_clean = git_hash_dirty.decode('utf8').replace('\n','')
-            # clean/dirty status of local git
-            git_status_dirty = subprocess.check_output(['git', 'diff', '--stat'])
-            git_status_clean = git_status_dirty.decode('utf8')
-            git_status = 'clean' if git_status_clean == "" else 'dirty'
-            # write them
-            f.write(f"Git commit: {git_hash_clean}\n")
-            f.write(f"Git status: {git_status}\n")
-        except subprocess.CalledProcessError:
-            f.write(f"Git commit: [N/A... on cluster]\n")
-            f.write(f"Git status: [N/A... on cluster]\n")
+        # tar up the result
+        dst_feats_path_without_trailing_slash = os.path.join(dataset["dst_feats_path"], '')[:-1]
+        dst_tar_file_path = dst_feats_path_without_trailing_slash + '.tar.gz'
+        compress_to_tar(dataset["dst_feats_path"], dst_tar_file_path, use_pigz=True)
 
-    # tar up the result
-    dst_feats_path_without_trailing_slash = os.path.join(dst_feats_path, '')[:-1]
-    dst_tar_file_path = dst_feats_path_without_trailing_slash + '.tar.gz'
-    compress_to_tar(dst_feats_path, dst_tar_file_path)
+        # upload the tar to GCS in data_bucket at top level
+        dst_tar_blob_path = dataset["extracted_feats_dataset_name"] + '.tar.gz'
+        if not args.no_upload:
+            upload_blob(args.data_bucket, dst_tar_blob_path, dst_tar_file_path)
 
-    # upload the tar to GCS in data_bucket at top level
-    dst_tar_blob_path = extracted_feats_dataset_name + '.tar.gz'
-    if not args.no_upload:
-        upload_blob(args.data_bucket, dst_tar_blob_path, dst_tar_file_path)
+        # write GCS paths to file for cluster kubeflow component output artifact
+        write_output_artifact(path=dataset["artifact_output_path"], value=dst_tar_blob_path)
 
-    print(f"Extracted features saved to {dst_feats_path}")
-    print(f"Tar file saved to {dst_tar_file_path}")
+        print(f"Extracted features saved to {dataset['dst_feats_path']}")
+        print(f"Tar file saved to {dst_tar_file_path}")
 else:
-    # in pass-through mode, provide outputs from a previous run with the passed ID
+    # write pass through artifacts to files for component outputs
+    # test
+    test_name = args.test_path.replace(".tar.gz", "")
+    dst_test_tar_blob_path = f"{test_name}_feats_{args.reuse_run_with_id}.tar.gz"
+    # train
     train_name = args.train_path.replace(".tar.gz", "")
-    dst_tar_blob_path = f"{train_name}_feats_{args.reuse_run_with_id}.tar.gz"
-
-# write outputs to provided output paths
-# @TODO this is currently going around kubeflow's built in mechanisms. Wasn't
-#       sure if a component outputPath could be read and delivered to downstream
-#       components as a string, int, etc, rather than as a file path. Figure out
-#       the right way to do this...
-# open and write
-with open(args.output_path_train_feats_tar_path, 'w') as f:
-    f.write(dst_tar_blob_path)
-with open(args.output_path_test_feats_tar_path, 'w') as f:
-    # @TODO Hook up extracted test features for even smaller footprint and
-    #       time-to-train on component startup
-    f.write(args.test_path)
+    dst_train_tar_blob_path = f"{train_name}_feats_{args.reuse_run_with_id}.tar.gz"
+    # write
+    write_output_artifact(path=args.output_path_test_feats_tar_path,
+            value=dst_test_tar_blob_path)
+    write_output_artifact(path=args.output_path_train_feats_tar_path,
+            value=dst_train_tar_blob_path)
 
 print(f"Finished in {time.time() - start_time} (s)")

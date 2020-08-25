@@ -2,7 +2,7 @@ name: Feature Extractor
 description: Extract features to train on
 inputs:
   - {name: data_bucket, type: String}
-  - {name: test_list, type: String}
+  - {name: test_utterances_list, type: String}
   - {name: train_list, type: String}
   - {name: test_path, type: String}
   - {name: train_path, type: String}
@@ -18,7 +18,7 @@ implementation:
     command: [
       python3, /src/feature_extractor.py,
       --data-bucket, {inputValue: data_bucket},
-      --test_list, {inputValue: test_list},
+      --test_utterances_list, {inputValue: test_utterances_list},
       --train_list, {inputValue: train_list},
       --test_path, {inputValue: test_path},
       --train_path, {inputValue: train_path},

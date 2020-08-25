@@ -10,6 +10,7 @@
 #                   ID. This automatically happens when kubeflow runs
 #                   are preempted, but must be manually passed for runs
 #                   outside of kubeflow.
+# @param --no-cuda Set to disable cuda/gpu for the run, whether or not it's available
 # @param --set-seed For deterministic, reproducible tests
 # @note Flags for the "small" dataset:
 #         --test_list=vox1_test_list_small.txt \
@@ -24,6 +25,14 @@ export VOX_COMMON_SRC_DIR="../../common/src/"
 python3 src/train.py \
   --data-bucket=voxsrc-2020-voxceleb-v4 \
   --test_list=vox1_no_cuda.txt --train_list=vox2_no_cuda.txt \
-  --test_path=vox1_no_cuda.tar.gz --train_path=vox2_no_cuda_feats.tar.gz \
-  --batch_size=5 --nSpeakers=2 --max_epoch=2 \
+  --test_path=vox1_no_cuda_feats.tar.gz --train_path=vox2_no_cuda_feats.tar.gz \
+  --batch_size=5 --nSpeakers=2 --max_epoch=2 --test_interval=1 \
   $@
+
+## full data catered to milo's local hardware
+#python3 src/train.py \
+#  --data-bucket=voxsrc-2020-voxceleb-v4 \
+#  --test_list=vox1_full.txt --train_list=vox2_full.txt \
+#  --test_path=vox1_full_feats.tar.gz --train_path=vox2_full_feats.tar.gz \
+#  --batch_size=400 --nSpeakers=2 --max_epoch=500 --test_interval=3\
+#  $@
