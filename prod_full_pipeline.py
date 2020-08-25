@@ -37,6 +37,7 @@ def baseline_repro_pipeline(
     feature_extraction_threads: int = 10,
     # @note This run contains no_cuda pre-extracted features for vox1 and vox2
     reuse_run_with_id: str = "milo_webster-19rvuxfu",
+    gaussian_noise_std: float = .9,
 ):
     # set prod_hw=True to enable production hardware (preemptible V100).
     # Encountered odd issues when node resource constraints aren't known at
@@ -72,6 +73,7 @@ def baseline_repro_pipeline(
         run_id = run_id,
         n_speakers = n_speakers,
         test_interval = test_interval,
+        gaussian_noise_std = gaussian_noise_std,
     )
 
     train_task.after(feature_extraction_task)

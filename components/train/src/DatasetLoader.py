@@ -52,6 +52,13 @@ def extract_subset_of_spectrogram(spectrogram, desired_frames):
     # return 'desired_frames'-long subset of audio segment
     return padded_spectrogram[:,:,int(start_frame):int(start_frame)+desired_frames]
 
+# @TODO Change input from std dev to dB, after figuring out power when
+#       adding random noise to a log mel spectrogram
+def add_gaussian_noise_to_spectrogram(spectrogram, noise_std_dev):
+    mean = 0
+    noise = np.random.normal(mean, noise_std_dev, spectrogram.shape)
+    return spectrogram + noise
+
 # @brief Extracts n_subsets of overlapping desired_frames length. Each subset's offset
 #        from the previous frame is dependent on its total length and the number
 #        of subsets
@@ -76,14 +83,16 @@ def extract_eval_subsets_from_spectrogram(spectrogram, desired_frames, n_subsets
 
 class DatasetLoader(object):
     def __init__(self, dataset_file_name, batch_size, max_frames,
-            max_seg_per_spk, n_data_loader_thread, gSize, new_train_path,
-            maxQueueSize = 50, **kwargs):
+            max_seg_per_spk, n_data_loader_thread,
+            gSize, new_train_path, maxQueueSize = 50, gaussian_noise_std = .9,
+            **kwargs):
         self.dataset_file_name = dataset_file_name;
         self.n_workers = n_data_loader_thread;
         self.max_frames = max_frames;
         self.max_seg_per_spk = max_seg_per_spk;
         self.batch_size = batch_size;
         self.maxQueueSize = maxQueueSize;
+        self.gaussian_noise_std = gaussian_noise_std
 
         self.dequeue_timeout_print_throttler = print_throttler(min_print_period_secs=.5)
         self.num_dequeue_timeouts = 0
@@ -141,7 +150,9 @@ class DatasetLoader(object):
                     utterance_file_path = self.data_list[ij][ii].replace(".wav", ".npy")
                     full_spectrogram = np.load(utterance_file_path)
                     subset_spectrogram = extract_subset_of_spectrogram(full_spectrogram, self.max_frames)
-                    feat.append(torch.FloatTensor(subset_spectrogram));
+                    noisy_spectrogram = add_gaussian_noise_to_spectrogram(
+                            subset_spectrogram, noise_std_dev=self.gaussian_noise_std)
+                    feat.append(torch.FloatTensor(noisy_spectrogram));
                 in_data.append(torch.cat(feat, dim=0));
 
             in_label = np.asarray(self.data_label[index:index+self.batch_size]);

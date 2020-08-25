@@ -12,6 +12,7 @@ inputs:
   - {name: run_id, type: String}
   - {name: n_speakers, type: Integer}
   - {name: test_interval, type: Integer}
+  - {name: gaussian_noise_std, type: Float}
 outputs:
 - {name: trained_model, type: GCSPath}
 implementation:
@@ -30,6 +31,7 @@ implementation:
       --run-id, {inputValue: run_id},
       --nSpeakers, {inputValue: n_speakers},
       --test_interval, {inputValue: test_interval},
+      --gaussian-noise-std, {inputValue: gaussian_noise_std},
 
       --save-model-to, {outputPath: trained_model},
     ]

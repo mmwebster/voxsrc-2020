@@ -63,6 +63,11 @@ parser.add_argument('--checkpoint-bucket', type=str,
         default="voxsrc-2020-checkpoints-dev");
 parser.add_argument('--run-id', type=str, default=f"{gen_run_id()}");
 
+# new training params
+parser.add_argument('--gaussian-noise-std', type=float, default=.9,
+        help="Standard deviation of gaussian noise used to augment utterance "
+             "spectrogram training data");
+
 # permanent/component outputs
 parser.add_argument('--save-model-to', type=str, default="./out/model.txt")
 
