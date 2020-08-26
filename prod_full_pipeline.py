@@ -27,8 +27,8 @@ def baseline_repro_pipeline(
     test_path: str = 'vox1_full.tar.gz',
     train_path: str = 'vox2_full.tar.gz',
     checkpoint_bucket: str = 'voxsrc-2020-checkpoints',
-    batch_size: int = 500,
-    max_epoch: int = 15,
+    batch_size: int = 750,
+    max_epoch: int = 21,
     n_speakers: int = 2,
     test_interval: int = 3,
     # @TODO Figure out why feat extraction is taking so much longer on GKE.
