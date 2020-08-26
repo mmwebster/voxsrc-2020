@@ -15,7 +15,7 @@ import random
 import glob
 from baseline_misc.tuneThreshold import tuneThresholdfromScore
 from SpeakerNet import SpeakerNet
-from DatasetLoader import DatasetLoader
+from VoxcelebIterableDataset import VoxcelebIterableDataset
 import subprocess
 import time
 from pathlib import Path
@@ -76,7 +76,7 @@ parser.add_argument('--max_frames', type=int, default=200,  help='Input length t
 parser.add_argument('--batch_size', type=int, default=200,  help='Batch size');
 # ^^^ use --batch_size=30 for small datasets that can't fill an entire 200 speaker pair/triplet batch
 parser.add_argument('--max_seg_per_spk', type=int, default=100, help='Maximum number of utterances per speaker per epoch');
-parser.add_argument('--n-data-loader-thread', type=int, default=10, help='Number of loader threads');
+parser.add_argument('--n-data-loader-thread', type=int, default=7, help='Number of loader threads');
 
 ## Training details
 # @TODO disentangle learning rate decay from validation
@@ -292,10 +292,14 @@ gsize_dict  = {'proto':args.nSpeakers, 'triplet':2, 'contrastive':2, 'softmax':1
 assert args.trainfunc in gsize_dict
 assert gsize_dict[args.trainfunc] <= 100
 
-## Initialise data loader
-trainLoader = DatasetLoader(train_list,
+# new data loading
+voxceleb_iterable_dataset = VoxcelebIterableDataset(train_list,
         gSize=gsize_dict[args.trainfunc], new_train_path=train_path,
-        **vars(args));
+        **vars(args))
+
+# @note batch_size = None bypasses the default batching mechanism
+train_loader = torch.utils.data.DataLoader(voxceleb_iterable_dataset,
+        batch_size = None, num_workers=args.n_data_loader_thread)
 
 clr = s.updateLearningRate(1)
 
@@ -309,7 +313,8 @@ while(1):
     print(time.strftime("%Y-%m-%d %H:%M:%S"), it, "Training %s with LR %f..."%(args.model,max(clr)));
 
     ## Train network
-    loss, traineer = s.train_network(loader=trainLoader);
+    loss, traineer = s.train_network(loader=train_loader,
+            data_length=len(voxceleb_iterable_dataset));
 
     # validate and save model
     if it % args.test_interval == 0:

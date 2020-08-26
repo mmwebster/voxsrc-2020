@@ -8,7 +8,7 @@ import math, pdb, sys, random
 import numpy as np
 import time, os, itertools, shutil, importlib
 from baseline_misc.tuneThreshold import tuneThresholdfromScore
-from DatasetLoader import extract_eval_subsets_from_spectrogram
+from VoxcelebIterableDataset import extract_eval_subsets_from_spectrogram
 from loss.ge2e import GE2ELoss
 from loss.angleproto import AngleProtoLoss
 from loss.cosface import AMSoftmax
@@ -24,12 +24,13 @@ import wandb
 
 class SpeakerNet(nn.Module):
 
-    def __init__(self, device, max_frames, lr = 0.0001, margin = 1, scale = 1, hard_rank = 0, hard_prob = 0, model="alexnet50", nOut = 512, nSpeakers = 1000, optimizer = 'adam', encoder_type = 'SAP', normalize = True, trainfunc='contrastive', **kwargs):
+    def __init__(self, device, max_frames, batch_size, lr = 0.0001, margin = 1, scale = 1, hard_rank = 0, hard_prob = 0, model="alexnet50", nOut = 512, nSpeakers = 1000, optimizer = 'adam', encoder_type = 'SAP', normalize = True, trainfunc='contrastive', **kwargs):
         super(SpeakerNet, self).__init__();
 
         argsdict = {'nOut': nOut, 'encoder_type':encoder_type}
 
         self.device = device
+        self.batch_size = batch_size
 
         # grab actual model version
         SpeakerNetModel = importlib.import_module('models.'+model).__getattribute__(model)
@@ -85,11 +86,13 @@ class SpeakerNet(nn.Module):
     ## Train network
     ## ===== ===== ===== ===== ===== ===== ===== =====
 
-    def train_network(self, loader):
+    # @TODO figure out how to get length of dataset through DataLoader while
+    #       passing a batch_size=None to the DataLoader
+    def train_network(self, loader, data_length):
 
         self.train();
 
-        stepsize = loader.batch_size;
+        stepsize = self.batch_size;
 
         counter = 0;
         index   = 0;
@@ -109,7 +112,7 @@ class SpeakerNet(nn.Module):
         for data, data_label in loader:
             # init print interval after data loader has set its length during __iter__
             if print_interval == 0:
-                num_batches = (len(loader)/loader.batch_size)
+                num_batches = (data_length/self.batch_size)
                 print_interval = max(int(num_batches*print_interval_percent/100), 1)
                 print(f"SpeakerNet: Starting training @ {print_interval_percent}%"
                       f" update interval")
@@ -150,11 +153,11 @@ class SpeakerNet(nn.Module):
                 print_interval_start_time = time.time()
                 eer_str = "%2.3f%%"%(top1/counter)
                 # misc progress updates and estimates
-                progress_percent = int(index * 100 / len(loader))
-                num_samples_processed = print_interval * loader.batch_size
+                progress_percent = int(index * 100 / data_length)
+                num_samples_processed = print_interval * self.batch_size
                 sample_train_rate = num_samples_processed / interval_elapsed_time
-                epoch_train_period = (len(loader) / sample_train_rate) / 60
-                print(f"SpeakerNet: Processed {progress_percent}% (of {len(loader)}) => "
+                epoch_train_period = (data_length / sample_train_rate) / 60
+                print(f"SpeakerNet: Processed {progress_percent}% (of {data_length}) => "
                       f"Loss {loss/counter:.2f}, "
                       f"EER/T1 {eer_str}, "
                       f"Train-rate {sample_train_rate:.2f} samples/sec "
