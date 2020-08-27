@@ -13,6 +13,7 @@ inputs:
   - {name: n_speakers, type: Integer}
   - {name: test_interval, type: Integer}
   - {name: gaussian_noise_std, type: Float}
+  - {name: n_data_loader_thread, type: Integer}
 outputs:
 - {name: trained_model, type: GCSPath}
 implementation:
@@ -32,6 +33,7 @@ implementation:
       --nSpeakers, {inputValue: n_speakers},
       --test_interval, {inputValue: test_interval},
       --gaussian-noise-std, {inputValue: gaussian_noise_std},
+      --n-data-loader-thread, {inputValue: n_data_loader_thread},
 
       --save-model-to, {outputPath: trained_model},
     ]

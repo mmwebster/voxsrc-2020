@@ -7,6 +7,8 @@ from kubernetes import client as k8s_client
 feature_extraction_op = comp.load_component_from_file(os.path.join(
     "./components/feature-extractor/", 'feature_extractor_component.yaml'))
 
+ipc_shared_mem_volume = dsl.PipelineVolume(name='shm-vol', empty_dir={'medium': 'Memory'})
+
 train_op = comp.load_component_from_file(os.path.join(
     "./components/train/", 'train_component.yaml'))
 
@@ -31,11 +33,11 @@ def baseline_repro_pipeline(
     max_epoch: int = 2,
     n_speakers: int = 2,
     test_interval: int = 1,
-    # @TODO Figure out why feat extraction is taking so much longer on GKE.
-    #       Could be an issue of compute or IO performance. Currently 10 threads
-    #       performs well on n1-standard-16
-    feature_extraction_threads: int = 10,
-    # @note This run contains no_cuda pre-extracted features for vox1 and vox2
+    # @note 16 threads on non-prod hardware (n1-standard-8 used by the KF GUI)
+    #       isn't optimal, but important for closely simulating prod environment
+    feature_extraction_threads: int = 16,
+    data_loader_threads: int = 7,
+    # @note This run ID contains "no_cuda" pre-extracted features for vox1 and vox2
     reuse_run_with_id: str = "milo_webster-240asznq",
     gaussian_noise_std: float = .9,
 ):
@@ -74,8 +76,10 @@ def baseline_repro_pipeline(
         n_speakers = n_speakers,
         test_interval = test_interval,
         gaussian_noise_std = gaussian_noise_std,
+        n_data_loader_thread = data_loader_threads,
     )
 
+    train_task.add_pvolumes({'/dev/shm': ipc_shared_mem_volume})
     train_task.after(feature_extraction_task)
 
     # add Weights & Biases credentials
