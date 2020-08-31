@@ -12,6 +12,8 @@
 #                   outside of kubeflow.
 # @param --no-cuda Set to disable cuda/gpu for the run, whether or not it's available
 # @param --set-seed For deterministic, reproducible tests
+# @param --model=[e.g. ResNetSE34L_mini]
+# @param --gaussian-noise-std=[e.g. 0.05]
 # @note Flags for the "small" dataset:
 #         --test_list=vox1_test_list_small.txt \
 #         --train_list=vox2_train_list_small.txt \
@@ -35,6 +37,6 @@ python3 src/train.py \
 #  --data-bucket=voxsrc-2020-voxceleb-v4 \
 #  --test_list=vox1_full.txt --train_list=vox2_full.txt \
 #  --test_path=vox1_full_feats.tar.gz --train_path=vox2_full_feats.tar.gz \
-#  --batch_size=400 --nSpeakers=2 --max_epoch=500 --test_interval=3 \
+#  --batch_size=650 --nSpeakers=2 --max_epoch=500 --test_interval=10 \
 #  --n-data-loader-thread=5 \
 #  $@
