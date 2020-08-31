@@ -24,13 +24,17 @@
 export VOX_COMMON_SRC_DIR="../../common/src/"
 
 # run the component workload
-python3 src/train.py \
+while ! python3 src/train.py \
   --data-bucket=voxsrc-2020-voxceleb-v4 \
   --test_list=vox1_no_cuda.txt --train_list=vox2_no_cuda.txt \
   --test_path=vox1_no_cuda_feats.tar.gz --train_path=vox2_no_cuda_feats.tar.gz \
   --batch_size=5 --nSpeakers=2 --max_epoch=2 --test_interval=1 \
   --n-data-loader-thread=5\
   $@
+do
+  sleep 1
+  echo "Exited with non-zero status. Restarting..."
+done
 
 ## full data catered to milo's local hardware
 #python3 src/train.py \
