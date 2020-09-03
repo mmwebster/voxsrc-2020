@@ -23,3 +23,6 @@ Note that the codebase is currently hardcoded to our own personal GCP resource U
 - **env**: conda environments to support local runs (haven't setup local Docker runs, but hopefully soon)
 - **gcp-cluster**: bash scripts containing the config used to setup various GCP node pools in our training cluster
 - **[pipeline]_pipeline.yaml**: The files specifying which components, with what configs, with what resources are run
+
+## License
+Free, open, etc., with the exception of licenses corresponding to baseline code from [clovaai/voxceleb_trainer](https://github.com/clovaai/voxceleb_trainer). All code originating from this repo is tracked as such in git, with the exception of some manually copied code that is marked by "@credit" comments at the start of their blocks.
