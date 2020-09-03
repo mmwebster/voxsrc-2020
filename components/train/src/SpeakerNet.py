@@ -1,35 +1,34 @@
 #!/usr/bin/python
 #-*- coding: utf-8 -*-
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import math, pdb, sys, random
-import numpy as np
-import time, os, itertools, shutil, importlib
-from baseline_misc.tuneThreshold import tuneThresholdfromScore
-from DatasetLoader import extract_eval_subsets_from_spectrogram
-from loss.ge2e import GE2ELoss
-from loss.angleproto import AngleProtoLoss
-from loss.cosface import AMSoftmax
-from loss.arcface import AAMSoftmax
-from loss.softmax import SoftmaxLoss
-from loss.protoloss import ProtoLoss
-from loss.pairwise import PairwiseLoss
-import torch.cuda.amp as amp
-
-from utils.misc_utils import print_throttler
-
 import wandb
+import torch
+import numpy as np
+import torch.nn as nn
+import torch.cuda.amp as amp
+import math, pdb, sys, random
+import torch.nn.functional as F
+from loss.angleproto import AngleProtoLoss
+from utils.misc_utils import print_throttler
+import time, os, itertools, shutil, importlib
+from IterableEvalDataset import IterableEvalDataset
+from baseline_misc.tuneThreshold import tuneThresholdfromScore
 
 class SpeakerNet(nn.Module):
 
-    def __init__(self, device, max_frames, lr = 0.0001, margin = 1, scale = 1, hard_rank = 0, hard_prob = 0, model="alexnet50", nOut = 512, nSpeakers = 1000, optimizer = 'adam', encoder_type = 'SAP', normalize = True, trainfunc='contrastive', **kwargs):
+    def __init__(self, device, max_frames, batch_size, eval_batch_size,
+            n_data_loader_thread, lr = 0.0001, margin = 1, scale = 1,
+            hard_rank = 0, hard_prob = 0, model="alexnet50", nOut = 512,
+            nSpeakers = 1000, optimizer = 'adam', encoder_type = 'SAP',
+            normalize = True, trainfunc='contrastive', **kwargs):
         super(SpeakerNet, self).__init__();
 
         argsdict = {'nOut': nOut, 'encoder_type':encoder_type}
 
         self.device = device
+        self.batch_size = batch_size
+        self.eval_batch_size = eval_batch_size
+        self.n_data_loader_thread = n_data_loader_thread
 
         # grab actual model version
         SpeakerNetModel = importlib.import_module('models.'+model).__getattribute__(model)
@@ -37,45 +36,16 @@ class SpeakerNet(nn.Module):
         # set model as __S__ member
         self.__S__ = SpeakerNetModel(**argsdict).to(self.device);
 
-        if trainfunc == 'angleproto':
-            self.__L__ = AngleProtoLoss(self.device).to(self.device)
-            self.__train_normalize__    = True
-            self.__test_normalize__     = True
-        elif trainfunc == 'ge2e':
-            self.__L__ = GE2ELoss().to(self.device)
-            self.__train_normalize__    = True
-            self.__test_normalize__     = True
-        elif trainfunc == 'amsoftmax':
-            self.__L__ = AMSoftmax(in_feats=nOut, n_classes=nSpeakers, m=margin, s=scale).to(self.device)
-            self.__train_normalize__    = False
-            self.__test_normalize__     = True
-        elif trainfunc == 'aamsoftmax':
-            self.__L__ = AAMSoftmax(in_feats=nOut, n_classes=nSpeakers, m=margin, s=scale).to(self.device)
-            self.__train_normalize__    = False
-            self.__test_normalize__     = True
-        elif trainfunc == 'softmax':
-            self.__L__ = SoftmaxLoss(in_feats=nOut, n_classes=nSpeakers).to(self.device)
-            self.__train_normalize__    = False
-            self.__test_normalize__     = True
-        elif trainfunc == 'proto':
-            self.__L__ = ProtoLoss().to(self.device)
-            self.__train_normalize__    = False
-            self.__test_normalize__     = False
-        elif trainfunc == 'triplet':
-            self.__L__ = PairwiseLoss(loss_func='triplet', hard_rank=hard_rank, hard_prob=hard_prob, margin=margin).to(self.device)
-            self.__train_normalize__    = True
-            self.__test_normalize__     = True
-        elif trainfunc == 'contrastive':
-            self.__L__ = PairwiseLoss(loss_func='contrastive', hard_rank=hard_rank, hard_prob=hard_prob, margin=margin).to(self.device)
-            self.__train_normalize__    = True
-            self.__test_normalize__     = True
-        else:
-            raise ValueError('Undefined loss.')
+        # remove variable loss from baseline, only using angular prototypical loss
+        self.__L__ = AngleProtoLoss(self.device).to(self.device)
+        self.__train_normalize__    = True
+        self.__test_normalize__     = True
 
         if optimizer == 'adam':
             self.__optimizer__ = torch.optim.Adam(self.parameters(), lr = lr);
         elif optimizer == 'sgd':
-            self.__optimizer__ = torch.optim.SGD(self.parameters(), lr = lr, momentum = 0.9, weight_decay=5e-5);
+            self.__optimizer__ = torch.optim.SGD(self.parameters(), lr = lr,
+                    momentum = 0.9, weight_decay=5e-5);
         else:
             raise ValueError('Undefined optimizer.')
 
@@ -85,11 +55,13 @@ class SpeakerNet(nn.Module):
     ## Train network
     ## ===== ===== ===== ===== ===== ===== ===== =====
 
-    def train_network(self, loader):
+    # @TODO figure out how to get length of dataset through DataLoader while
+    #       passing a batch_size=None to the DataLoader
+    def train_on(self, loader, data_length):
 
         self.train();
 
-        stepsize = loader.batch_size;
+        stepsize = self.batch_size;
 
         counter = 0;
         index   = 0;
@@ -106,10 +78,13 @@ class SpeakerNet(nn.Module):
         epoch_start_time = time.time()
 
 
+        total_elapsed_dequeue_time = 0
+        batch_dequeue_start_time = time.time()
         for data, data_label in loader:
+            total_elapsed_dequeue_time += time.time() - batch_dequeue_start_time
             # init print interval after data loader has set its length during __iter__
             if print_interval == 0:
-                num_batches = (len(loader)/loader.batch_size)
+                num_batches = (data_length/self.batch_size)
                 print_interval = max(int(num_batches*print_interval_percent/100), 1)
                 print(f"SpeakerNet: Starting training @ {print_interval_percent}%"
                       f" update interval")
@@ -119,8 +94,7 @@ class SpeakerNet(nn.Module):
             feat = []
             # use autocast for half precision where possible
             with amp.autocast():
-                # @TODO Can alls inp-s in data go into a single batch to
-                #       populate feats?
+                # @note The 'data' returned by the loader is n_speakers * batch_dims
                 for inp in data:
                     outp      = self.__S__.forward(inp.to(self.device))
                     if self.__train_normalize__:
@@ -128,9 +102,7 @@ class SpeakerNet(nn.Module):
                     feat.append(outp)
 
                 feat = torch.stack(feat,dim=1).squeeze()
-
                 label   = torch.LongTensor(data_label).to(self.device)
-
                 nloss, prec1 = self.__L__.forward(feat,label)
 
                 loss    += nloss.detach().cpu();
@@ -150,150 +122,125 @@ class SpeakerNet(nn.Module):
                 print_interval_start_time = time.time()
                 eer_str = "%2.3f%%"%(top1/counter)
                 # misc progress updates and estimates
-                progress_percent = int(index * 100 / len(loader))
-                num_samples_processed = print_interval * loader.batch_size
+                progress_percent = int(index * 100 / data_length)
+                num_samples_processed = print_interval * self.batch_size
                 sample_train_rate = num_samples_processed / interval_elapsed_time
-                epoch_train_period = (len(loader) / sample_train_rate) / 60
-                print(f"SpeakerNet: Processed {progress_percent}% (of {len(loader)}) => "
+                epoch_train_period = (data_length / sample_train_rate) / 60
+                print(f"SpeakerNet: Processed {progress_percent}% => "
                       f"Loss {loss/counter:.2f}, "
                       f"EER/T1 {eer_str}, "
-                      f"Train-rate {sample_train_rate:.2f} samples/sec "
-                      f"(est. {epoch_train_period:.2f} mins/epoch)")
+                      f"Train rate {epoch_train_period:.2f} mins/epoch, "
+                      f"Total batch fetch time {total_elapsed_dequeue_time:.2f} (s)")
+            batch_dequeue_start_time = time.time()
 
         print(f"SpeakerNet: Finished epoch in {(time.time() - epoch_start_time)/60:.2f} mins")
         return (loss/counter, top1/counter);
 
-    ## ===== ===== ===== ===== ===== ===== ===== =====
-    ## Read data from list
-    ## ===== ===== ===== ===== ===== ===== ===== =====
+    # @brief Evaluate the model on the provided test list and test data
+    # @param test_list_path Full path to file containing test pairs with
+    #                       lines [label, utterance_relative_path_a,
+    #                             utterance_relative_path_b]
+    # @param test_data_path Full path to directory containing all test data
+    # @param num_utterance_eval_subsets The number of overlapping fixed-length
+    #                                   spectrogram subsets to extract from the
+    #                                   test utterances. With 10, for example,
+    #                                   10 fixed-length spectrograms will be
+    #                                   extracted from a single utterance, with
+    #                                   a time offset of (1/10)*utterance_length
+    # @note DO NOT MODIFY THIS EVAL STRATEGY. The procedure for this EER calc is
+    #       specified by VoxSRC competition and necessary for relative comparison
+    #       of model performance
+    # @TODO accept a data loader for validation data, just like the interface
+    #       for training
+    def evaluate_on(self, test_list_path, test_data_path,
+            num_utterance_eval_subsets=10):
 
-    def readDataFromList(self, listfilename):
-
-        data_list = {};
-
-        with open(listfilename) as listfile:
-            while True:
-                line = listfile.readline();
-                if not line:
-                    break;
-
-                data = line.split();
-                filename = data[1];
-                speaker_name = data[0]
-
-                if not (speaker_name in data_list):
-                    data_list[speaker_name] = [];
-                data_list[speaker_name].append(filename);
-
-        return data_list
-
-
-    ## ===== ===== ===== ===== ===== ===== ===== =====
-    ## Evaluate from list
-    ## ===== ===== ===== ===== ===== ===== ===== =====
-
-    def evaluateFromListSave(self, listfilename, print_interval_percent=10, feat_dir='', test_path='', num_eval=10):
-        
         self.eval();
-        
-        lines       = []
-        files       = []
-        filedict    = {}
-        feats       = {}
-        tstart      = time.time()
+        scores = []
+        labels = []
 
-        if feat_dir != '':
-            print('Saving temporary files to %s'%feat_dir)
-            if not(os.path.exists(feat_dir)):
-                os.makedirs(feat_dir)
+        # create torch dataset and data loader for evaluation data
+        iterable_eval_dataset = IterableEvalDataset(
+                test_list_path=test_list_path,
+                test_data_path=test_data_path,
+                num_desired_frames=self.__max_frames__,
+                num_utterance_eval_subsets=num_utterance_eval_subsets,
+                batch_size=self.eval_batch_size)
+        # @note num_workers is 1 greater than that for train, since eval's data loading 
+        eval_loader = torch.utils.data.DataLoader(iterable_eval_dataset,
+                batch_size = None, num_workers=self.n_data_loader_thread)
 
-        ## Read all lines
-        with open(listfilename) as listfile:
-            while True:
-                line = listfile.readline();
-                if (not line): #  or (len(all_scores)==1000) 
-                    break;
+        print(f"SpeakerNet: Starting model eval on {len(eval_loader)} batches "
+              f"of size {self.eval_batch_size}")
 
-                data = line.split();
+        # map of [path]->[embedding] to contain NxM features where N is the
+        # number of utterance subsets extracted, and M is the dimension of the
+        # model's embedding
+        utterance_embedding_cache = {}
 
-                files.append(data[1])
-                files.append(data[2])
-                lines.append(line)
+        start_time = time.time()
 
-        setfiles = list(set(files))
-        setfiles.sort()
-
-        print_interval = int(len(setfiles)*print_interval_percent/100)
-        ## Save all features to file
-        for idx, file in enumerate(setfiles):
-            # extract Subsets x Freq x Frames tensor from a single utterance in
-            # evaluation set for evaluation features
-            utterance_file_path = os.path.join(test_path,file).replace(".wav", ".npy")
-            full_utterance_spectrogram = np.load(utterance_file_path)
-
-            # evaluate on network with half-precision where possible
+        for feature_utterance_path_lookup, spectrograms in eval_loader:
+            # calculate embeddings for each utterance-subset spectrogram in tensor
             with amp.autocast():
-                overlapping_spectrogram_subsets = torch.FloatTensor(
-                        extract_eval_subsets_from_spectrogram(
-                            full_utterance_spectrogram, self.__max_frames__)).to(self.device)
+                embeddings = self.__S__.forward(spectrograms.to(self.device))\
+                                 .detach().cpu().numpy()
 
-                ref_feat = self.__S__.forward(
-                        overlapping_spectrogram_subsets).detach().cpu()
+            # cache all the computed features
+            for utterance_index, utterance_path in enumerate(feature_utterance_path_lookup):
+                # compute subset of features tensor belonging to single utterance
+                # (each utterance has multiple subsets extracted from its
+                # spectrogram for evaluation)
+                utterance_start_index = utterance_index * num_utterance_eval_subsets
+                utterance_embedding_indices = range(utterance_start_index,
+                        utterance_start_index + num_utterance_eval_subsets)
+                # save the utterance embeddings
+                utterance_embedding_cache[utterance_path] \
+                        = embeddings[utterance_embedding_indices]
+        print(f"SpeakerNet: Computed utterance segment embeddings "
+              f"in {time.time() - start_time} (s)")
+        start_time = time.time()
 
-                filename = '%06d.wav'%idx
+        # @TODO Parallelize compute-bound normalization and computation of scores on cpu
+        # Read through test file and compute scores from test pair embedding
+        # similarity
+        with open(test_list_path) as utterance_test_pairs:
+            line = utterance_test_pairs.readline()
+            while line:
+                data = line.split()
+                label = data[0]
+                # @note torch.functional.normalize not implement for half
+                #       precision, so casting up
+                ref_feat = torch.from_numpy(
+                        utterance_embedding_cache[data[1]].astype(np.float32))
+                com_feat = torch.from_numpy(
+                        utterance_embedding_cache[data[2]].astype(np.float32))
 
-                if feat_dir == '':
-                    feats[file]     = ref_feat
-                else:
-                    filedict[file]  = filename
-                    torch.save(ref_feat,os.path.join(feat_dir,filename))
-
-                telapsed = time.time() - tstart
-
-                if idx % print_interval == 0:
-                    print(f"Reading {idx}/{len(setfiles)}: {(idx/telapsed):.2f} Hz, embed size {ref_feat.size()[1]}")
-
-        all_scores = [];
-        all_labels = [];
-        tstart = time.time()
-
-        total_length = len(lines)
-        print_interval = int(total_length*print_interval_percent/100)
-        ## Read files and compute all scores
-        for idx, line in enumerate(lines):
-
-            data = line.split();
-
-            # evaluate with half precision where possible
-            with amp.autocast():
-                if feat_dir == '':
-                    ref_feat = feats[data[1]].to(self.device)
-                    com_feat = feats[data[2]].to(self.device)
-                else:
-                    ref_feat = torch.load(os.path.join(feat_dir,filedict[data[1]])).to(self.device)
-                    com_feat = torch.load(os.path.join(feat_dir,filedict[data[2]])).to(self.device)
-
+                # optionally normalize
                 if self.__test_normalize__:
                     ref_feat = F.normalize(ref_feat, p=2, dim=1)
                     com_feat = F.normalize(com_feat, p=2, dim=1)
 
-                dist = F.pairwise_distance(ref_feat.unsqueeze(-1).expand(-1,-1,num_eval), com_feat.unsqueeze(-1).expand(-1,-1,num_eval).transpose(0,2)).detach().cpu().numpy();
+                # compute and save score
+                dist = F.pairwise_distance(
+                            ref_feat.unsqueeze(-1).expand(-1,-1,
+                                num_utterance_eval_subsets),
+                            com_feat.unsqueeze(-1).expand(-1,-1,
+                                num_utterance_eval_subsets).transpose(0,2)
+                       ).detach().numpy()
 
-                score = -1 * np.mean(dist);
+                # append scores
+                scores.append(-1 * np.mean(dist))
+                labels.append(int(label))
 
-                all_scores.append(score);  
-                all_labels.append(int(data[0]));
+                line = utterance_test_pairs.readline()
 
-            if idx % print_interval == 0:
-                telapsed = time.time() - tstart
-                print(f"Computing {idx}/{total_length}: {(idx/telapsed):.2f} Hz")
+        print(f"SpeakerNet: Computed utterance test pair scores "
+              f"in {time.time() - start_time} (s)")
 
-        if feat_dir != '':
-            print(' Deleting temporary files.')
-            shutil.rmtree(feat_dir)
+        torch.cuda.empty_cache()
 
-        return (all_scores, all_labels);
-
+        return (scores, labels);
 
     ## ===== ===== ===== ===== ===== ===== ===== =====
     ## Update learning rate
@@ -314,19 +261,14 @@ class SpeakerNet(nn.Module):
     ## ===== ===== ===== ===== ===== ===== ===== =====
 
     def saveParameters(self, path):
-        
         torch.save(self.state_dict(), path);
-        
-        
+
     ## ===== ===== ===== ===== ===== ===== ===== =====
     ## Save model
     ## ===== ===== ===== ===== ===== ===== ===== =====
 
     def saveModel(self, path):
-        
         torch.save(self, path);
-
-
 
     ## ===== ===== ===== ===== ===== ===== ===== =====
     ## Load parameters
@@ -350,4 +292,3 @@ class SpeakerNet(nn.Module):
                 continue;
 
             self_state[name].copy_(param);
-

@@ -96,9 +96,7 @@ class ResNetSE(nn.Module):
 
         return x
 
-
 def ResNetSE34L(nOut=256, **kwargs):
-    # Number of filters
-    num_filters = [16, 32, 64, 128]
-    model = ResNetSE(SEBasicBlock, [3, 4, 6, 3], num_filters, nOut, **kwargs)
+    model = ResNetSE(SEBasicBlock, layers=[3, 4, 6, 3],
+                     num_filters=[16, 32, 64, 128], nOut=nOut, **kwargs)
     return model
