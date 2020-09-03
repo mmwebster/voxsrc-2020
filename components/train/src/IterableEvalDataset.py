@@ -2,7 +2,7 @@ import os
 import math
 import torch
 import numpy as np
-from VoxcelebIterableDataset import pad_spectrogram
+from IterableTrainDataset import pad_spectrogram
 
 # @brief Extracts n_subsets of overlapping desired_frames length. Each subset's offset
 #        from the previous frame is dependent on its total length and the number

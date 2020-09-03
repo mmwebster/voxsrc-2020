@@ -21,7 +21,7 @@ import subprocess
 from pathlib import Path
 import time, os, argparse, socket
 from SpeakerNet import SpeakerNet
-from VoxcelebIterableDataset import VoxcelebIterableDataset
+from IterableTrainDataset import IterableTrainDataset
 from baseline_misc.tuneThreshold import tuneThresholdfromScore
 from utils.data_utils import download_gcs_dataset, extract_gcs_dataset, \
                      transcode_gcs_dataset, get_loc_paths_from_gcs_dataset,\
@@ -270,12 +270,12 @@ assert args.trainfunc in gsize_dict
 assert gsize_dict[args.trainfunc] <= 100
 
 # new data loading
-voxceleb_iterable_dataset = VoxcelebIterableDataset(train_list,
+voxceleb_2_iterable_dataset = IterableTrainDataset(train_list,
         gSize=gsize_dict[args.trainfunc], new_train_path=train_path,
         **vars(args))
 
 # @note batch_size = None bypasses the default batching mechanism
-train_loader = torch.utils.data.DataLoader(voxceleb_iterable_dataset,
+train_loader = torch.utils.data.DataLoader(voxceleb_2_iterable_dataset,
         batch_size = None, num_workers=args.n_data_loader_thread)
 
 clr = s.updateLearningRate(1)
@@ -297,7 +297,7 @@ for epoch in range(it, args.max_epoch):
 
     # train
     loss, train_eer = s.train_on(loader=train_loader,
-            data_length=len(voxceleb_iterable_dataset));
+            data_length=len(voxceleb_2_iterable_dataset));
 
     epoch_results = f"LR {learning_rate}, Train T1/EER {float(train_eer)}, Train loss {loss}"
 

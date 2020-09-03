@@ -63,12 +63,12 @@ def add_gaussian_noise_to_spectrogram(spectrogram, noise_std_dev):
 # @note Must set "batch_size=None" in the consuming DataLoader in order to allow
 #       this class to manually compose batches. This is a quick fix to maintain
 #       compatibility with VoxSRC-provided baseline dataloading code
-class VoxcelebIterableDataset(torch.utils.data.IterableDataset):
+class IterableTrainDataset(torch.utils.data.IterableDataset):
     def __init__(self, dataset_file_name, batch_size, max_frames,
             max_seg_per_spk, n_data_loader_thread,
             gSize, new_train_path, maxQueueSize = 50, gaussian_noise_std = .9,
             **kwargs):
-        super(VoxcelebIterableDataset).__init__()
+        super(IterableTrainDataset).__init__()
         self.n_speakers = gSize
         self.batch_size = batch_size
 
@@ -176,11 +176,11 @@ class VoxcelebIterableDataset(torch.utils.data.IterableDataset):
     def __iter__(self):
         worker_info = torch.utils.data.get_worker_info()
 
-        print(f"VoxcelebIterableDataset: Starting worker thread #{worker_info.id}")
+        print(f"IterableTrainDataset: Starting worker thread #{worker_info.id}")
         index = worker_info.id * self.batch_size;
 
         if (index >= self.nFiles):
-            print(f"VoxcelebIterableDataset: ERROR -> Invalid data loader #{worker_info.id}")
+            print(f"IterableTrainDataset: ERROR -> Invalid data loader #{worker_info.id}")
             return
 
         while self.next_batch_exists(index):
@@ -207,4 +207,4 @@ class VoxcelebIterableDataset(torch.utils.data.IterableDataset):
 
             index += self.batch_size * worker_info.num_workers;
 
-        print(f"VoxcelebIterableDataset: Stopping worker #{worker_info.id}")
+        print(f"IterableTrainDataset: Stopping worker #{worker_info.id}")
