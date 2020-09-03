@@ -7,25 +7,25 @@ import sys, os
 # off the training cluster)
 sys.path.insert(0, os.getenv('VOX_COMMON_SRC_DIR'))
 
-import time, os, argparse, socket
-import numpy
+import pwd
 import pdb
+import glob
+import time
+import yaml
+import wandb
+import numpy
 import torch
 import random
-import glob
-from baseline_misc.tuneThreshold import tuneThresholdfromScore
+import google
+import subprocess
+from pathlib import Path
+import time, os, argparse, socket
 from SpeakerNet import SpeakerNet
 from VoxcelebIterableDataset import VoxcelebIterableDataset
-import subprocess
-import time
-from pathlib import Path
+from baseline_misc.tuneThreshold import tuneThresholdfromScore
 from utils.data_utils import download_gcs_dataset, extract_gcs_dataset, \
                      transcode_gcs_dataset, get_loc_paths_from_gcs_dataset,\
                      download_blob, upload_blob
-import yaml
-import pwd
-import google
-import wandb
 
 # @brief Generate a unique run ID when not run in kubeflow (kubeflow passes
 #        its own default run ID) in order to store training artifacts
@@ -74,6 +74,8 @@ parser.add_argument('--save-model-to', type=str, default="./out/model.txt")
 ## Data loader
 parser.add_argument('--max_frames', type=int, default=200,  help='Input length to the network');
 parser.add_argument('--batch_size', type=int, default=200,  help='Batch size');
+# @TODO figure out max eval batch size for this on V100
+parser.add_argument('--eval_batch_size', type=int, default=85,  help='Batch size for loading validation data for model eval');
 # ^^^ use --batch_size=30 for small datasets that can't fill an entire 200 speaker pair/triplet batch
 parser.add_argument('--max_seg_per_spk', type=int, default=100, help='Maximum number of utterances per speaker per epoch');
 parser.add_argument('--n-data-loader-thread', type=int, default=7, help='Number of loader threads');
@@ -121,20 +123,21 @@ args = parser.parse_args();
 # set random seeds
 # @TODO any reason to use BOTH 'random' and 'numpy.random'?
 if args.set_seed:
-    print("Using fixed random seed")
+    print("train: Using fixed random seed")
     random.seed(0)
     numpy.random.seed(0)
     torch.manual_seed(0)
     torch.cuda.manual_seed(0)
 
 # touch wandb tmp dir
-print(f"Creating directory {args.save_tmp_wandb_to}")
+print(f"train: Creating directory {args.save_tmp_wandb_to}")
 Path(args.save_tmp_wandb_to).mkdir(parents=True, exist_ok=True)
 
 wandb.init(project="voxsrc-2020-v1", config=args, id=args.run_id,
         resume="allow", dir=args.save_tmp_wandb_to)
 
-train_list, test_list, train_path, test_path = [None, None, None, None]
+train_list, test_list, train_path, test_path = [None, None,
+        None, None]
 
 # make directories for tmp data
 if not(os.path.exists(args.save_tmp_data_to)):
@@ -142,38 +145,22 @@ if not(os.path.exists(args.save_tmp_data_to)):
 if not(os.path.exists(args.save_tmp_model_to)):
     os.makedirs(args.save_tmp_model_to)
 
-## Fetch data from GCS if enabled
-# @TODO replace these entire set of conditions with just a download, extract,
-#       and path setting. Skipping the fetch, and using an existing downloaded
-#       dataset should already be working with the data fetch functions on
-#       their own
-if args.data_bucket is not None and not args.skip_data_fetch:
-    print("Installing dataset from GCS")
-    # @TODO mimic the --install-local-dataset function in
-    #       data/utils.py, using the newer functions that it invokes
-    #       in common/src/utils/data_utils.py
+# Install data from GCS, skipping download if already downladed, and skipping
+# extraction if already downloaded and extracted
+print("train: Installing dataset from GCS")
+# @TODO mimic the --install-local-dataset function in
+#       data/utils.py, using the newer functions that it invokes
+#       in common/src/utils/data_utils.py
 
-    # download, extract, transcode (compressed AAC->WAV) dataset
-    blobs = [args.train_list, args.test_list, args.train_path,
-            args.test_path]
-    download_gcs_dataset(args.data_bucket, args.save_tmp_data_to, blobs)
-    # @TODO make extract_gcs_dataset take blob names as well
-    extract_gcs_dataset(args, use_pigz=True)
-    # set new lists and data paths
-    train_list, test_list, train_path, test_path \
-        = get_loc_paths_from_gcs_dataset(args.save_tmp_data_to, blobs)
-elif args.data_bucket is not None and args.skip_data_fetch:
-    print("Skipping GCS data fetch")
-    # dataset from GCS already available; set new lists and data paths
-    train_list, test_list, train_path, test_path \
-        = get_loc_paths_from_gcs_dataset(args)
-else:
-    print("Using local, permanent dataset")
-    # pass through to use permanent local dataset
-    train_list = args.train_list
-    test_list = args.test_list
-    train_path = args.train_path
-    test_path = args.test_path
+# download, extract, transcode (compressed AAC->WAV) dataset
+blobs = [args.train_list, args.test_list, args.train_path,
+        args.test_path]
+download_gcs_dataset(args.data_bucket, args.save_tmp_data_to, blobs)
+# @TODO make extract_gcs_dataset take blob names as well
+extract_gcs_dataset(args, use_pigz=True)
+# set new lists and data paths
+train_list, test_list, train_path, test_path \
+    = get_loc_paths_from_gcs_dataset(args.save_tmp_data_to, blobs)
 
 # init directories
 # temporary / internal output directories
@@ -189,12 +176,12 @@ for d in (tmp_output_dirs + output_dirs):
 
 # set torch device to cuda or cpu
 cuda_avail = torch.cuda.is_available()
-print(f"train.py: Cuda available: {cuda_avail}")
+print(f"train: Cuda available: {cuda_avail}")
 use_cuda = cuda_avail and not args.no_cuda
-print(f"train.py: Using cuda: {use_cuda}")
+print(f"train: Using cuda: {use_cuda}")
 device = torch.device("cuda" if use_cuda else "cpu")
-print(f"train.py: Torch version: {torch.__version__}")
-print(f"train.py: Cuda version: {torch.version.cuda}")
+print(f"train: Torch version: {torch.__version__}")
+print(f"train: Cuda version: {torch.version.cuda}")
 
 ## Load models
 s = SpeakerNet(device, **vars(args));
@@ -202,8 +189,6 @@ s = SpeakerNet(device, **vars(args));
 it          = 1;
 prevloss    = float("inf");
 sumloss     = 0;
-
-# Load model weights
 
 # Check for training meta data from a previously preempted run
 METADATA_NAME = 'metadata.yaml'
@@ -216,53 +201,50 @@ def save_model_kf_output_artifact(model, epoch, dst):
     final_model_name = "model%09d.model"%epoch
     Path(dst).mkdir(parents=True, exist_ok=True)
     final_model_filename = os.path.join(dst, final_model_name)
-    print(f"Saving KF output artifact {final_model_name} to {dst}")
+    print(f"train: Saving KF output artifact {final_model_name} to {dst}")
     model.saveParameters(final_model_filename);
 
-if args.reset_training:
-    print("Starting at epoch 0, regardless of previous training progress")
-else:
-    # fetch metadata if available
-    try:
-        download_blob(args.checkpoint_bucket, metadata_gcs_src_path,
-                metadata_file_dst_path)
-        print("Downloaded previous training metadata")
-        with open(metadata_file_dst_path, 'r') as f:
+# fetch metadata and latest model, if available
+try:
+    download_blob(args.checkpoint_bucket, metadata_gcs_src_path,
+            metadata_file_dst_path)
+    print("train: Downloaded previous training metadata")
+    with open(metadata_file_dst_path, 'r') as f:
+        try:
+            metadata = yaml.safe_load(f)
+            print(f"train: Loaded previous training metadata: {metadata}")
+            # grab the latest model name (corresponding to the last epoch)
+            latest_model_name = metadata['latest_model_name']
+            # download the model
+            model_gcs_src_path = os.path.join(args.run_id, latest_model_name)
+            model_file_dst_path = os.path.join(args.save_tmp_model_to, latest_model_name)
             try:
-                metadata = yaml.safe_load(f)
-                print(f"Loaded previous training metadata: {metadata}")
-                # grab the latest model name (corresponding to the last epoch)
-                latest_model_name = metadata['latest_model_name']
-                # download the model
-                model_gcs_src_path = os.path.join(args.run_id, latest_model_name)
-                model_file_dst_path = os.path.join(args.save_tmp_model_to, latest_model_name)
-                try:
-                    download_blob(args.checkpoint_bucket, model_gcs_src_path,
-                            model_file_dst_path)
-                    print("**Downloaded a saved model**")
-                    # load the saved model's params into the model class
-                    s.loadParameters(model_file_dst_path);
-                    print("Model %s loaded from previous state!"%model_file_dst_path);
-                    it = int(os.path.splitext(os.path.basename(model_file_dst_path))[0][5:]) + 1
-                except google.cloud.exceptions.NotFound:
-                    print("**No saved model found**")
-            except yaml.YAMLError as exc:
-                print(exc)
-                metadata = default_metadata
-    except google.cloud.exceptions.NotFound:
-        print("**No previous training metadata found**")
+                download_blob(args.checkpoint_bucket, model_gcs_src_path,
+                        model_file_dst_path)
+                print("train: Downloaded a saved model")
+                # load the saved model's params into the model class
+                s.loadParameters(model_file_dst_path);
+                print(f"train: Loaded model params from path {model_file_dst_path}");
+                it = int(os.path.splitext(os.path.basename(model_file_dst_path))[0][5:]) + 1
+            except google.cloud.exceptions.NotFound:
+                print("train: No saved model found")
+        except yaml.YAMLError as exc:
+            print(exc)
+            metadata = default_metadata
+except google.cloud.exceptions.NotFound:
+    print("train: No previous training metadata found**")
 
-    # exit if previous training run finished
-    if 'is_done' in metadata and metadata['is_done']:
-        save_model_kf_output_artifact(s, metadata['num_epochs'],
-                                      args.save_model_to)
-        print("Terminating... training for this run has already completed")
-        quit()
+# exit if previous training run finished
+if 'is_done' in metadata and metadata['is_done']:
+    save_model_kf_output_artifact(s, metadata['num_epochs'],
+                                  args.save_model_to)
+    print("train: Terminating... training for this run has already completed")
+    quit()
 
 if(args.initial_model != ""):
     raise "Error: TODO"
     s.loadParameters(args.initial_model);
-    print("Model %s loaded!"%args.initial_model);
+    print(f"train: Loaded model params from path {args.initial_model}");
 
 for ii in range(0,it-1):
     if ii % args.lr_decay_interval == 0:
@@ -270,24 +252,19 @@ for ii in range(0,it-1):
 
 ## Evaluation code
 if args.eval == True:
-    sc, lab = s.evaluateFromListSave(test_list, print_interval_percent=10,
-                                     feat_dir=args.save_tmp_feats_to,
-                                     test_path=test_path)
-    result = tuneThresholdfromScore(sc, lab, [1, 0.1]);
-    print('EER %2.4f'%result[1])
+    scores, labels = s.evaluate_on(test_list, test_path)
+    result = tuneThresholdfromScore(scores, labels, [1, 0.1]);
+    print(f"train: Initial EER is {result[1]:2.4f}")
 
     quit();
 
-## Write args to scorefile
-scorefile = open(os.path.join(args.save_tmp_results_to,"scores.txt"), "a+");
-
 for items in vars(args):
     print(items, vars(args)[items]);
-    scorefile.write('%s %s\n'%(items, vars(args)[items]));
-scorefile.flush()
 
 ## Assertion
-gsize_dict  = {'proto':args.nSpeakers, 'triplet':2, 'contrastive':2, 'softmax':1, 'amsoftmax':1, 'aamsoftmax':1, 'ge2e':args.nSpeakers, 'angleproto':args.nSpeakers}
+gsize_dict  = {'proto':args.nSpeakers, 'triplet':2, 'contrastive':2,
+        'softmax':1, 'amsoftmax':1, 'aamsoftmax':1, 'ge2e':args.nSpeakers,
+        'angleproto':args.nSpeakers}
 
 assert args.trainfunc in gsize_dict
 assert gsize_dict[args.trainfunc] <= 100
@@ -307,55 +284,46 @@ clr = s.updateLearningRate(1)
 print(f"Creating parent dir for path={args.save_tmp_model_to}")
 Path(args.save_tmp_model_to).parent.mkdir(parents=True, exist_ok=True)
 
-wandb_log = {'epoch': 0, 'loss': 0, 'train_EER': 0, 'clr': max(clr), 'val_EER': metadata['val_EER']}
+wandb_log = {'epoch': 0, 'loss': 0, 'train_EER': 0, 'clr': max(clr),
+        'val_EER': metadata['val_EER']}
 
-while(1):
-    print(time.strftime("%Y-%m-%d %H:%M:%S"), it, "Training %s with LR %f..."%(args.model,max(clr)));
+def iter_info(epoch):
+    return f"train: {time.strftime('%Y-%m-%d %H:%M:%S')} | Epoch {epoch}"
 
-    ## Train network
-    loss, traineer = s.train_network(loader=train_loader,
+# @TODO rename 'it'
+for epoch in range(it, args.max_epoch):
+    learning_rate = max(clr)
+    print(f"{iter_info(epoch)}: Training {args.model} with LR {learning_rate}")
+
+    # train
+    loss, train_eer = s.train_on(loader=train_loader,
             data_length=len(voxceleb_iterable_dataset));
 
+    epoch_results = f"LR {learning_rate}, Train T1/EER {float(train_eer)}, Train loss {loss}"
+
     # validate and save model
-    if it % args.test_interval == 0:
-        print(time.strftime("%Y-%m-%d %H:%M:%S"), it, "Evaluating...");
+    if epoch % args.test_interval == 0:
+        print(f"{iter_info(epoch)}: Evaluating model on test set")
 
-        sc, lab = s.evaluateFromListSave(test_list, print_interval_percent=10,
-                                         feat_dir=args.save_tmp_feats_to,
-                                         test_path=test_path)
-        result = tuneThresholdfromScore(sc, lab, [1, 0.1]);
+        scores, labels = s.evaluate_on(test_list, test_path)
+        result = tuneThresholdfromScore(scores, labels, [1, 0.1]);
+        val_eer = float(round(result[1],5))
 
-        print(time.strftime("%Y-%m-%d %H:%M:%S"), "LR %f, TEER/T1 %2.2f, TLOSS %f, VEER %2.4f"%( max(clr), traineer, loss, result[1]));
-        scorefile.write("IT %d, LR %f, TEER/T1 %2.2f, TLOSS %f, VEER %2.4f\n"%(it, max(clr), traineer, loss, result[1]));
+        epoch_results += f", Val EER {val_eer}"
+        wandb_log.update({'val_EER': val_eer})
 
-        scorefile.flush()
+    print(f"{iter_info(epoch)}: {epoch_results}")
 
-        eerfile = open(args.save_tmp_model_to+"/model%09d.eer"%it, 'w')
-        eerfile.write('%.4f'%result[1])
-        eerfile.close()
-
-        wandb_log.update({'val_EER': float(round(result[1],5))})
-
-    else:
-        print(time.strftime("%Y-%m-%d %H:%M:%S"), "LR %f, TEER %2.2f, TLOSS %f"%( max(clr), traineer, loss));
-        scorestuff = "IT %d, LR %f, TEER %2.2f, TLOSS %f\n"%(it, max(clr), traineer, loss)
-        scorefile.write(scorestuff);
-
-        scorefile.flush()
-
-    if it % args.lr_decay_interval == 0:
-        clr = s.updateLearningRate(args.lr_decay)
-
-    wandb_log.update({'epoch': it, 'loss': loss, 'train_EER': traineer, 'clr': max(clr)})
+    wandb_log.update({'epoch': epoch, 'loss': loss, 'train_EER': train_eer, 'clr': learning_rate})
     wandb.log(wandb_log)
 
     # save model file for this epoch
-    model_name = "model%09d.model"%it
+    model_name = "model%09d.model"%epoch
     model_filename = os.path.join(args.save_tmp_model_to, model_name)
     s.saveParameters(model_filename);
     # update metadata
     metadata['latest_model_name'] = model_name
-    metadata['num_epochs'] = it
+    metadata['num_epochs'] = epoch
     metadata['val_EER'] = wandb_log['val_EER']
     # dump metadata to yaml file
     with open(metadata_file_dst_path, 'w') as f:
@@ -375,13 +343,9 @@ while(1):
     upload_blob(args.checkpoint_bucket, metadata_gcs_dst_path,
             metadata_file_src_path)
 
-    if it >= args.max_epoch:
-        break
-
-    it+=1;
-    print("");
-
-scorefile.close();
+    # update learning rate
+    if epoch % args.lr_decay_interval == 0:
+        clr = s.updateLearningRate(args.lr_decay)
 
 # save "done" to metadata so it restarts on retry
 metadata['is_done'] = True

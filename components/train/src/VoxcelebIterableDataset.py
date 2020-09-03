@@ -1,13 +1,13 @@
 #! /usr/bin/python
 # -*- encoding: utf-8 -*-
 
-import torch
-import numpy as np
-import random
 import os
-import threading
 import time
 import queue
+import torch
+import random
+import threading
+import numpy as np
 from utils.misc_utils import print_throttler
 
 # @credit github.com/clovaai/voxceleb_trainer
@@ -56,29 +56,6 @@ def add_gaussian_noise_to_spectrogram(spectrogram, noise_std_dev):
     mean = 0
     noise = np.random.normal(mean, noise_std_dev, spectrogram.shape)
     return spectrogram + noise
-
-# @brief Extracts n_subsets of overlapping desired_frames length. Each subset's offset
-#        from the previous frame is dependent on its total length and the number
-#        of subsets
-def extract_eval_subsets_from_spectrogram(spectrogram, desired_frames, n_subsets = 10):
-    # pad if too small for network dims
-    padded_spectrogram = pad_spectrogram(spectrogram, desired_frames)
-
-    # make list of overlapping n_subsets start frames spanning the entire utterance
-    actual_frames = spectrogram.shape[2]
-    start_frames = np.linspace(0, actual_frames - desired_frames, n_subsets)
-
-    # append each utterance subset
-    utterance_subsets = []
-    for start_frame in start_frames:
-        # @note appending the first element in first axis in order to get a list
-        #       of NxM tensors, rather than 1xNxM
-        utterance_subsets.append(padded_spectrogram[0,:,
-            int(start_frame):int(start_frame)+desired_frames])
-
-    # return stacked 3d tensor instead of list of 3d tensors
-    return np.stack(utterance_subsets, axis=0)
-
 
 # @brief Iteratable for Voxceleb 2 dataset, constructed from a training list
 #        file, following the PyTorch IterableDataset interface. Meant for
