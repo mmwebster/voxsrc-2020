@@ -87,14 +87,15 @@ class IterableEvalDataset(torch.utils.data.IterableDataset):
                 full_path = os.path.join(self.test_data_path,
                         sample_utterance_path).replace(".wav", ".npy")
                 # load raw spectrogram features
-                full_utterance_spectrogram = np.load(full_path)
+                full_utterance_spectrogram = np.load(full_path).astype(np.float16)
 
                 # convert to torch tensors of multiple subsets of this utterance
                 # from start to finish
-                overlapping_spectrogram_subsets = torch.FloatTensor(
+                overlapping_spectrogram_subsets = torch.from_numpy(
                         extract_eval_subsets_from_spectrogram(
                         full_utterance_spectrogram, self.num_desired_frames,
                         self.num_utterance_eval_subsets))
+                overlapping_spectrogram_subsets.requires_grad = False
                 batch_sample_features.append(overlapping_spectrogram_subsets)
 
             # pack sample features in proper tensor dims

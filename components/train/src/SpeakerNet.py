@@ -182,8 +182,9 @@ class SpeakerNet(nn.Module):
 
         for feature_utterance_path_lookup, spectrograms in eval_loader:
             # calculate embeddings for each utterance-subset spectrogram in tensor
-            with torch.no_grad():
-                embeddings = self.__S__.forward(spectrograms.to(self.device)).detach().cpu().numpy()
+            with amp.autocast():
+                embeddings = self.__S__.forward(spectrograms.to(self.device))\
+                                 .detach().cpu().numpy()
 
             # cache all the computed features
             for utterance_index, utterance_path in enumerate(feature_utterance_path_lookup):
@@ -208,8 +209,12 @@ class SpeakerNet(nn.Module):
             while line:
                 data = line.split()
                 label = data[0]
-                ref_feat = torch.FloatTensor(utterance_embedding_cache[data[1]])
-                com_feat = torch.FloatTensor(utterance_embedding_cache[data[2]])
+                # @note torch.functional.normalize not implement for half
+                #       precision, so casting up
+                ref_feat = torch.from_numpy(
+                        utterance_embedding_cache[data[1]].astype(np.float32))
+                com_feat = torch.from_numpy(
+                        utterance_embedding_cache[data[2]].astype(np.float32))
 
                 # optionally normalize
                 if self.__test_normalize__:

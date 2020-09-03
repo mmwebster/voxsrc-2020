@@ -301,10 +301,11 @@ for epoch in range(it, args.max_epoch):
 
     epoch_results = f"LR {learning_rate}, Train T1/EER {float(train_eer)}, Train loss {loss}"
 
-    # validate and save model
+    # validate model
     if epoch % args.test_interval == 0:
         print(f"{iter_info(epoch)}: Evaluating model on test set")
 
+        # compute EER on test set
         scores, labels = s.evaluate_on(test_list, test_path)
         result = tuneThresholdfromScore(scores, labels, [1, 0.1]);
         val_eer = float(round(result[1],5))
