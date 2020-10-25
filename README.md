@@ -1,7 +1,12 @@
 # VoxSRC 2020 Speaker Recognition Challenge
 Our codebase for the 2020 VoxSRC Speaker Recognition Challenge. It contains source for our ML pipeline and GKE training infrastructure.
 
-Please contact @mmwebster on LinkedIn if you're interested in collaborating on this project.
+Please contact @mmwebster on LinkedIn if you're interested in collaborating on this project. Feel free to submit a GitHub issue if you run into problems using it, or would like access to our pre-extracted LFB features for VoxCeleb 2.
+
+## Our Main Contributions
+* Kubeflow components for baseline feature extraction and training via Google Kubernetes Engine
+* Cluster preemption and autoscaling support for training (reduces resource costs to ~1/3)
+* Pre-Extracted 40-dim Log Mel Filterbank features hosted on Google Cloud Storage (15% the footprint of the original VoxCeleb2 dataset)
 
 ## Usage
 See the wiki for setup instructions. Once setup, you can either
